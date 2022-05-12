@@ -10,6 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "browserify": "^17.0.0",
-    "nodepub": "github:alethiophile/nodepub"
+    "nodepub": "github:alethiophile/nodepub",
+    "sanitize-html": "^2.7.0"
   }
 }

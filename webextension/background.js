@@ -10,10 +10,9 @@
    }
 */
 let nodepub = require('nodepub');
+let sanitizeHtml = require('sanitize-html');
 
 let downloadState = null;
-
-HtmlSanitizer.AllowedTags['FIGURE'] = true;
 
 function url_basename(url) {
     let u = new URL(url);
@@ -49,6 +48,13 @@ function Story(opts) {
     function chapter_url(story_id, start, end) {
         return `https://fiction.live/api/anonkun/chapters/${story_id}/${start}/${end}`;
     }
+
+    function sanitize_chapter_html(html) {
+        return sanitizeHtml(html, {
+            allowedTags: sanitizeHtml.defaults.allowedTags.concat([ 'img' ])
+        });
+    }
+
     // This takes a chapter object that has been downloaded (i.e. has
     // a data member), processes the HTML of all entries, and creates
     // html and images members on the object. Also responsible for
@@ -63,7 +69,7 @@ function Story(opts) {
                 continue;
             }
             if (e.nt === 'chapter') {
-                let html = HtmlSanitizer.SanitizeHtml(e.b);
+                let html = sanitize_chapter_html(e.b);
                 html = `<div class="chapter">${html}</div>`;
                 let $dom = $(html);
                 $dom.find('img').each(function () {

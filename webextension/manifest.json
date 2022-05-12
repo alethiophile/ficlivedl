@@ -27,7 +27,7 @@
     },
 
     "background": {
-        "scripts": ["jquery-3.6.0.min.js", "HtmlSanitizer.js", "jszip.js",
+        "scripts": ["jquery-3.6.0.min.js", "jszip.js",
                     "browser_pack.js"]
     }
 }
