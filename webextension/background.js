@@ -45,7 +45,7 @@ function count_words(html) {
     return a.length;
 }
 
-function Story(url) {
+function Story(opts) {
     function chapter_url(story_id, start, end) {
         return `https://fiction.live/api/anonkun/chapters/${story_id}/${start}/${end}`;
     }
@@ -72,11 +72,19 @@ function Story(url) {
                     images.push(src);
                     $this.attr('src', '../images/' + url_basename(src));
                 });
-                $dom.find('figure').find('img').unwrap();
-                $dom.find('img').wrap(`<div class="imgwrap"></div>`);
+                if (opts.download_images) {
+                    $dom.find('figure').find('img').unwrap();
+                    $dom.find('img').wrap(`<div class="imgwrap"></div>`);
+                } else {
+                    // if no images, then all these elements are just removed
+                    $dom.find('figure').remove();
+                }
                 all_html.push($dom.prop('outerHTML'));
             }
             else if (e.nt === 'readerPost') {
+                if (!opts.reader_posts) {
+                    continue;
+                }
                 let title = 'b' in e ? e.b : 'Reader Posts';
                 let html = `<h3>${title}</h3>`;
                 let votes = 'votes' in e ? Object.getOwnPropertyNames(e.votes) : [];
@@ -160,7 +168,7 @@ function Story(url) {
     }
 
     return {
-        node_id: get_node_id(url),
+        node_id: get_node_id(opts.url),
         download_delay: 0.5,
         node_metadata: null,
         // This method returns this story's node URL in the API
@@ -179,7 +187,7 @@ function Story(url) {
         },
         story_url: function () {
             let re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\//;
-            let match = url.match(re);
+            let match = opts.url.match(re);
             return match[0];
         },
         title: function () {
@@ -252,18 +260,19 @@ function Story(url) {
            then I return a promise that chains off the final processing
            function, so the promise for the function as a whole resolves once
            the final chapter processing is done
+
+           also, the browser is single-threaded to begin with, so maybe I just
+           don't gain anything here at all (?)
         */
-        download_chapters: function (with_special) {
-            // let urls = this.chapter_urls();
-            // let chapters = [];
+        download_chapters: function () {
             let num_downloaded = 0;
-            let total_to_download = this.chapters.filter(x => (with_special || !x.special)).length;
+            let total_to_download = this.chapters.filter(x => (opts.download_special || !x.special)).length;
             let fulfill_func;
             let chapter_promise = new Promise((resolve) => { fulfill_func = resolve; });
             let node_md = this.node_metadata;
             let done_processing;
             for (let c of this.chapters) {
-                if (!with_special && c.special) {
+                if (!opts.download_special && c.special) {
                     continue;
                 }
                 let p = chapter_promise.then(function () {
@@ -472,19 +481,24 @@ img {
     };
 }
 
-function downloadStory({
+/*
+options accepted:
+
+{
     url,
-    download_special,
-    run_download,
-    download_images,
-    reader_posts
-}) {
-    let story = Story(url);
+    download_special, // whether to include appendices
+    run_download, // whether to generate epub or not
+    download_images, // whether to include images
+    reader_posts // whether to include write-ins
+}
+*/
+function downloadStory(opts) {
+    let story = Story(opts);
     story.download_node().then(() => {
         console.log(story.node_metadata);
-        return story.download_chapters(download_special);
+        return story.download_chapters();
     }).then(() => {
-        if (download_images) {
+        if (opts.download_images) {
             return story.download_images();
         }
         return;
@@ -492,7 +506,7 @@ function downloadStory({
         return story.download_cover();
     }
     ).then(() => {
-        if (run_download) {
+        if (opts.run_download) {
             return story.generate_epub();
         }
         return;

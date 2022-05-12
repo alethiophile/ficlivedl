@@ -39,8 +39,23 @@ function renderDownloadState(state) {
     }
 }
 
+let adv_shown = false;
+
+function adv_toggle() {
+    if (adv_shown) {
+        $('#adv').hide();
+        $('#adv_arrow').html('⯈');
+        adv_shown = false;
+    } else {
+        $('#adv').show();
+        $('#adv_arrow').html('⯆');
+        adv_shown = true;
+    }
+}
+
 function setup_popup() {
     $('#download').click(handleDownloadClick);
+    $('#adv_toggle').click(adv_toggle);
     browser.tabs.query({
         active: true,
         windowId: browser.windows.WINDOW_ID_CURRENT

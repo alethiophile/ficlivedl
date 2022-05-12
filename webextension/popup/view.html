@@ -1,5 +1,6 @@
 <html>
   <head>
+    <meta charset="utf-8">
     <link rel="stylesheet" href="popup.css"/>
     <script src="../jquery-3.6.0.min.js"></script>
     <script src="popup.js"></script>
@@ -9,10 +10,12 @@
     <div id="new_dl">
       <label><input type="checkbox" id="download_images" checked> Include images</label><br>
       <label><input type="checkbox" id="download_special" checked> Include appendices</label><br>
-      <!-- TODO this is for debugging, remove it before shipping -->
-      <label><input type="checkbox" id="run_download" checked> Generate ePub</label><br>
       <label><input type="checkbox" id="reader_posts" checked> Include reader posts</label><br>
       <div id="buttonbox"><button id="download">Download story</button></div>
+      <div id="adv_toggle"><span id="adv_arrow">⯈</span> Advanced</div>
+      <div id="adv">
+        <label><input type="checkbox" id="run_download" checked> Generate ePub</label><br>
+      </div>
     </div>
     <div id="dl_state">
       Downloading story...<br />

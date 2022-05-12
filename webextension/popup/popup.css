@@ -27,3 +27,8 @@ button {
     display: none;
     margin: 5px;
 }
+
+#adv {
+    display: none;
+    margin-left: 5px;
+}
