@@ -212,7 +212,7 @@ function Story(opts) {
             return new Date(this.node_metadata.ct);
         },
         date_updated: function () {
-            return new Date(this.node_metadata.ut);
+            return new Date(this.node_metadata.cht);
         },
         set_chapter_urls: function () {
             if (this.node_metadata === null) {
