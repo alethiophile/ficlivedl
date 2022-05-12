@@ -1,3 +1,6 @@
+let nodepub = require('nodepub');
+let sanitizeHtml = require('sanitize-html');
+
 /* A download state describes the current download status for purposes
    of progress display in the popup. It may be either null (signaling
    no download in progress), or an object as follows: 
@@ -9,9 +12,6 @@
      total: number of chapters/images overall
    }
 */
-let nodepub = require('nodepub');
-let sanitizeHtml = require('sanitize-html');
-
 let downloadState = null;
 
 function url_basename(url) {
