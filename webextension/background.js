@@ -1,3 +1,5 @@
+/* global $, browser, require, JSZip */
+
 let nodepub = require('nodepub');
 let sanitizeHtml = require('sanitize-html');
 
@@ -471,6 +473,74 @@ img {
                 saveAs: true,
                 url: blobURL
             });
+        },
+        generate_archive: async function () {
+            signal_state({
+                'title': this.title(),
+                'stage': 'Generating archive',
+            });
+            let chapter_html = [ { 'name': 'Title page', content: this.make_title_page() } ];
+            for (let c of this.chapters) {
+                chapter_html.push({
+                    name: process_chapter_title(c.metadata.title),
+                    content: c.html
+                });
+            }
+            let chapter_data = this.chapters.map(c => { return { metadata: c.metadata, data: c.data }; });
+            let files = [
+                {
+                    name: 'metadata.json',
+                    content: JSON.stringify(this.node_metadata)
+                },
+                {
+                    name: 'chapters.json',
+                    content: JSON.stringify(chapter_data)
+                },
+            ];
+            for (let c of chapter_html) {
+                files.push({
+                    name: `chapters/${to_filename(c.name)}.html`,
+                    content: c.content
+                });
+            }
+            let images = 'story_images' in this ? this.story_images : [];
+            for (let i of images) {
+                files.push({
+                    name: `images/${i.name}`,
+                    content: i.content
+                });
+            }
+            let zip = new JSZip();
+            for (let f of files) {
+                // let path = f.folder !== '' ? `${f.folder}/${f.name}` : f.name;
+                let opts = {};
+                // we don't bother compressing image files, they're usually
+                // already compressed by the format
+                if (f.name.startsWith('images/')) {
+                    opts.compression = 'STORE';
+                }
+                zip.file(f.name, f.content, opts);
+            }
+
+            let blob = await zip.generateAsync({
+                compression: 'DEFLATE',
+                type: 'blob'
+            }, md => {
+                signal_state({
+                    'title': this.title(),
+                    'stage': 'Generating archive',
+                    'done': Math.floor(md.percent),
+                    'total': 100
+                });
+            });
+
+            let fn = to_filename(this.title()) + '.zip';
+            let blobURL = URL.createObjectURL(blob);
+            return browser.downloads.download({
+                filename: fn,
+                saveAs: true,
+                url: blobURL
+            });
         }
     };
 }
@@ -481,7 +551,7 @@ options accepted:
 {
     url,
     download_special, // whether to include appendices
-    run_download, // whether to generate epub or not
+    download_type, // file type to download
     download_images, // whether to include images
     reader_posts // whether to include write-ins
 }
@@ -500,8 +570,10 @@ function downloadStory(opts) {
         return story.download_cover();
     }
     ).then(() => {
-        if (opts.run_download) {
+        if (opts.download_type === 'epub') {
             return story.generate_epub();
+        } else if (opts.download_type === 'archive') {
+            return story.generate_archive();
         }
         return;
     }).then(() => {

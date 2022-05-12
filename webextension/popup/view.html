@@ -14,7 +14,11 @@
       <div id="buttonbox"><button id="download">Download story</button></div>
       <div id="adv_toggle"><span id="adv_arrow">⯈</span> Advanced</div>
       <div id="adv">
-        <label><input type="checkbox" id="run_download" checked> Generate ePub</label><br>
+        <fieldset><legend>Download type:</legend>
+          <label title="An E-book file that can be read by e-reader devices and software"><input type="radio" name="download_type" value="epub" checked> ePub E-book</label><br>
+          <label title="A ZIP archive with all story data"><input type="radio" name="download_type" value="archive"> Full data archive</label><br>
+          <label title="No download (for testing purposes)"><input type="radio" name="download_type" value="none"> Nothing</label><br>
+        </fieldset>
       </div>
     </div>
     <div id="dl_state">

@@ -1,3 +1,5 @@
+/* global $, browser */
+
 let curTab = null;
 
 let story_url_re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\//;
@@ -10,13 +12,14 @@ function handleDownloadClick() {
         action: 'download',
         url: curTab.url,
         download_special: true,
-        run_download: true,
+        download_type: 'epub',
         download_images: true,
         reader_posts: true
     };
-    for (let i of ['download_special', 'run_download', 'download_images', 'reader_posts']) {
+    for (let i of ['download_special', 'download_images', 'reader_posts']) {
         message[i] = $('#' + i).prop('checked');
     }
+    message['download_type'] = dl_type_value();
     console.log(message);
     browser.runtime.sendMessage(message);
 }
@@ -25,7 +28,7 @@ function renderDownloadState(state) {
     if (state === null) {
         $('#new_dl').show();
         $('#dl_state').hide();
-        setup_popup();
+        setup_form();
     } else {
         $('#new_dl').hide();
         $('#dl_state').show();
@@ -55,9 +58,26 @@ function adv_toggle() {
     }
 }
 
-function setup_popup() {
+function dl_type_value() {
+    let rv = $('input[name="download_type"]:checked').val();
+    return rv;
+}
+
+function form_consistency_check() {
+    let dl_type = dl_type_value();
+    if (dl_type === 'archive') {
+        $('#download_special').prop('disabled', true).prop('checked', true);
+        $('#reader_posts').prop('disabled', true).prop('checked', true);
+    } else {
+        $('#download_special').prop('disabled', false);
+        $('#reader_posts').prop('disabled', false);
+    }
+}
+
+function setup_form() {
     $('#download').click(handleDownloadClick);
     $('#adv_toggle').click(adv_toggle);
+    $('#new_dl').find('input').change(form_consistency_check);
     browser.tabs.query({
         active: true,
         windowId: browser.windows.WINDOW_ID_CURRENT
@@ -83,7 +103,7 @@ function handleIconClick() {
     }).then(function (resp) {
         let dl_state = resp.state;
         if (dl_state === null) {
-            setup_popup();
+            setup_form();
         }
         else {
             renderDownloadState(dl_state);
