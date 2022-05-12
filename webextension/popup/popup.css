@@ -9,6 +9,7 @@ h2 {
 
 #new_dl {
     margin: 5px;
+    margin-top: 0px;
 }
 
 #buttonbox {
@@ -31,4 +32,13 @@ button {
 #adv {
     display: none;
     margin-left: 5px;
+}
+
+#error {
+    display: none;
+    border: 1px solid #f44;
+    background-color: #fcc;
+    margin: 3px;
+    padding: 3px;
+    border-radius: 5px;
 }

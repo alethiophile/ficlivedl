@@ -579,8 +579,8 @@ function downloadStory(opts) {
         return;
     }).then(() => {
         signal_state(null);
-    }).catch(() => {
-        signal_state(null);
+    }).catch((e) => {
+        signal_state({ 'error': e });
     });
 }
 

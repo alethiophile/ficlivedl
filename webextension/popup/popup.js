@@ -25,10 +25,16 @@ function handleDownloadClick() {
 }
 
 function renderDownloadState(state) {
-    if (state === null) {
+    if (state === null || !('stage' in state)) {
         $('#new_dl').show();
         $('#dl_state').hide();
         setup_form();
+        if (state !== null && 'error' in state) {
+            $('#error').show();
+            $('#error').html('Error: ' + state.error);
+        } else {
+            $('#error').hide();
+        }
     } else {
         $('#new_dl').hide();
         $('#dl_state').show();
