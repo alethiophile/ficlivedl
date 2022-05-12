@@ -12,6 +12,7 @@
     "permissions": [
         "*://fiction.live/*",
         "*://*.fiction.live/*",
+        "*://*.cloudfront.net/*",
         "downloads"
     ],
 
