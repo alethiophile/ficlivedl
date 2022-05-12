@@ -23,7 +23,8 @@ function url_basename(url) {
 
 // Sends the current download state as a browser message. This will be picked up
 // by the popup code if the popup is currently displayed.
-function signal_state() {
+function signal_state(state_msg) {
+    downloadState = state_msg;
     // this will error out in the promise if the popup
     // doesn't exist, but we don't care
     browser.runtime.sendMessage({
@@ -136,12 +137,15 @@ function Story(url) {
         // This method downloads the node info, returning a promise
         download_node: function () {
             let url = this.node_url();
-            downloadState = { 'stage': 'Getting metadata' };
+            signal_state({ 'stage': 'Getting metadata' });
             return $.get(url).then((data) => {
                 this.node_metadata = data;
                 this.set_chapter_urls();
                 return data;
             });
+        },
+        title: function () {
+            return this.node_metadata.t;
         },
         set_chapter_urls: function () {
             if (this.node_metadata === null) {
@@ -210,13 +214,12 @@ function Story(url) {
                     continue;
                 }
                 let p = chapter_promise.then(function () {
-                    downloadState = {
+                    signal_state({
                         'title': node_md.t,
                         'stage': 'Fetching chapters',
                         'done': num_downloaded,
                         'total': total_to_download
-                    };
-                    signal_state();
+                    });
                     let u = c.url;
                     return $.get(u);
                 });
@@ -255,13 +258,12 @@ function Story(url) {
             let num_downloaded = 0;
             for (let i of image_urls) {
                 let p = chapter_promise.then(() => {
-                    downloadState = {
-                        'title': this.node_metadata.t,
+                    signal_state({
+                        'title': this.title(),
                         'stage': 'Fetching images',
                         'done': num_downloaded,
                         'total': image_urls.size + 1
-                    };
-                    signal_state();
+                    });
                     return $.ajax({
                         url: i,
                         xhrFields: {
@@ -281,13 +283,12 @@ function Story(url) {
             return chapter_promise;
         },
         download_cover: function () {
-            downloadState = {
-                'title': this.node_metadata.t,
+            signal_state({
+                'title': this.title(),
                 'stage': 'Fetching images',
                 'done': this.total_story_images,
                 'total': this.total_story_images + 1
-            };
-            signal_state();
+            });
             let cover_url, cover_name;
             if ('i' in this.node_metadata) {
                 cover_url = this.node_metadata.i[0];
@@ -309,11 +310,10 @@ function Story(url) {
             });
         },
         generate_epub: function () {
-            downloadState = {
-                'title': this.node_metadata.t,
+            signal_state({
+                'title': this.title(),
                 'stage': 'Generating ePUB file',
-            };
-            signal_state();
+            });
             let metadata = {
                 id: `anonkun:${this.node_id}`,
                 cover: this.cover,
@@ -380,13 +380,12 @@ img {
                     compression: 'DEFLATE',
                     type: 'blob'
                 }, md => {
-                    downloadState = {
-                        'title': this.node_metadata.t,
+                    signal_state({
+                        'title': this.title(),
                         'stage': 'Generating ePUB file',
                         'done': Math.floor(md.percent),
                         'total': 100
-                    };
-                    signal_state();
+                    });
                 });
                 return p;
             }).then((blob) => {
@@ -428,11 +427,9 @@ function downloadStory({
         }
         return;
     }).then(() => {
-        downloadState = null;
-        signal_state();
+        signal_state(null);
     }).catch(() => {
-        downloadState = null;
-        signal_state();
+        signal_state(null);
     });
 }
 
