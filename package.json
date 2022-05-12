@@ -9,8 +9,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "browserify": "^17.0.0",
     "nodepub": "github:alethiophile/nodepub",
     "sanitize-html": "^2.7.0"
+  },
+  "devDependencies": {
+    "browserify": "^17.0.0",
+    "tinyify": "^3.0.0"
   }
 }
