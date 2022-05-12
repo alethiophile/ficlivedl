@@ -472,6 +472,12 @@ img {
             console.log('got zip blob');
             let fn = to_filename(this.title()) + '.epub';
             let blobURL = URL.createObjectURL(blob);
+            // we sinkhole download errors here because the most common case (I
+            // found in testing) was just when the user canceled the download,
+            // which we don't want to flag
+
+            // unfortunately there doesn't seem to be a robust way to
+            // distinguish between types of errors
             return browser.downloads.download({
                 filename: fn,
                 saveAs: true,
@@ -584,6 +590,7 @@ function downloadStory(opts) {
     }).then(() => {
         signal_state(null);
     }).catch((e) => {
+        console.log({ error: e });
         signal_state({ 'error': e.message });
     });
 }
