@@ -94,7 +94,9 @@ function Story(url) {
             else if (e.nt === 'choice') {
                 let title = 'b' in e ? e.b : 'Choices';
                 let html = `<h3>${title}</h3>`;
-                let votes = e.choices.map(x => { return { vote: x, count: 0 }; });
+                let votes = e.choices.map(x => { return { vote: x, count: 0, xout: false }; });
+                let xout = 'xOut' in e ? e.xOut : [];
+                let reasons = 'xOutReasons' in e ? e.xOutReasons : {};
                 for (let k in e.votes) {
                     if (Array.isArray(e.votes[k])) {
                         for (let v of e.votes[k]) {
@@ -105,9 +107,24 @@ function Story(url) {
                         votes[e.votes[k]].count += 1;
                     }
                 }
+                for (let i of xout) {
+                    votes[i].xout = true;
+                }
+                for (let i in reasons) {
+                    votes[i].reason = reasons[i];
+                }
                 votes.sort((a, b) => b.count - a.count);
+                votes.sort((a, b) => a.xout - b.xout);
                 for (let v of votes) {
-                    html += `<div class="vote"><div class="voteText">${v.vote}</div><span class="voteCount">${v.count}</span></div>`;
+                    if (!v.xout) {
+                        html += `<div class="vote"><div class="voteText">${v.vote}</div><span class="voteCount">${v.count}</span></div>`;
+                    } else {
+                        html += `<div class="vote"><div class="voteText"><s>${v.vote}</s>`;
+                        if ('reason' in v) {
+                            html += `<br>${v.reason}`;
+                        }
+                        html += '</div></div>';
+                    }
                 }
                 all_html.push(`<div class="voteChapter">${html}</div>`);
             }
