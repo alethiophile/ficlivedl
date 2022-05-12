@@ -312,7 +312,8 @@ function Story(opts) {
             let fulfill_func;
             let chapter_promise = new Promise((resolve) => { fulfill_func = resolve; });
             for (let c of this.chapters) {
-                for (let i of c.images) {
+                let il = 'images' in c ? c.images : [];
+                for (let i of il) {
                     image_urls.add(i);
                 }
             }
@@ -406,6 +407,9 @@ ${desc}
             let epub = nodepub.document(metadata);
             epub.addSection('Title Page', this.make_title_page());
             for (let c of this.chapters) {
+                if (!opts.download_special && c.special) {
+                    continue;
+                }
                 let ctitle = c.metadata.title;
                 if (ctitle.startsWith('#special ')) {
                     ctitle = ctitle.replace('#special ', 'Appendix: ');
