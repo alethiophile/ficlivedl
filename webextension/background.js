@@ -203,7 +203,7 @@ function Story(opts) {
             });
         },
         story_url: function () {
-            let re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\//;
+            let re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\/?/;
             let match = opts.url.match(re);
             return match[0];
         },

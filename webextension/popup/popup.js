@@ -2,7 +2,7 @@
 
 let curTab = null;
 
-let story_url_re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\//;
+let story_url_re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\/?/;
 
 function handleDownloadClick() {
     if (curTab === null || !('url' in curTab)) {
