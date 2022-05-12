@@ -51,7 +51,7 @@ function Story(url) {
         for (let e of chapter.data) {
             // sometimes a request will include extraneous entries
             // from different chapters
-            if ('t' in e && e.t !== chapter.metadata.title) {
+            if ('t' in e && e.t !== "" && e.t !== chapter.metadata.title) {
                 continue;
             }
             if (e.nt === 'chapter') {
