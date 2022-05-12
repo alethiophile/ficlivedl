@@ -7,9 +7,20 @@ h2 {
     margin-top: 2px;
 }
 
-button {
+#new_dl {
     margin: 5px;
+}
+
+#buttonbox {
+    display: flex;
+    width: 100%;
+    align-items: center;
+}
+
+button {
     text-align: center;
+    width: 95%;
+    margin: 5px;
 }
 
 #dl_state {

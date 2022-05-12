@@ -6,11 +6,18 @@
   </head>
   <body>
     <h2>Fiction.live Downloader</h2>
-    <button id="download">Download story</button>
+    <div id="new_dl">
+      <label><input type="checkbox" id="download_images" checked> Include images</label><br>
+      <label><input type="checkbox" id="download_special" checked> Include appendices</label><br>
+      <!-- TODO this is for debugging, remove it before shipping -->
+      <label><input type="checkbox" id="run_download" checked> Generate ePub</label><br>
+      <label><input type="checkbox" id="reader_posts" checked> Include reader posts</label><br>
+      <div id="buttonbox"><button id="download">Download story</button></div>
+    </div>
     <div id="dl_state">
       Downloading story...<br />
       Title: <span id="dl_story_title"></span><br />
-      Fetching <span id="dl_stage">chapters</span> <span id="dl_done">0</span>/<span id="dl_total">0</span>
+      <span id="dl_stage">Fetching chapters</span><span id="dl_progress">: <span id="dl_done">0</span>/<span id="dl_total">0</span></span>
     </div>
   </body>
 </html>
