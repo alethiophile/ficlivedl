@@ -1,5 +1,7 @@
 let curTab = null;
 
+let story_url_re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\//;
+
 function handleDownloadClick() {
     if (curTab === null || !('url' in curTab)) {
         return;
@@ -62,7 +64,7 @@ function setup_popup() {
     }).then(function (tabs) {
         let tab = tabs[0];
         curTab = tab;
-        if (!('url' in tab)) {
+        if (!('url' in tab) || tab.url.match(story_url_re) === null) {
             // no URL on tab object, therefore it's not a fiction.live
             // URL (this happens due to permissions: this addon has
             // only fiction.live host permissions, so the only tabs it
