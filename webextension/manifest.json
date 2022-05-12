@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "Fiction.live Downloader",
-    "version": "0.0.1",
+    "version": "0.1.0",
 
     "description": "Download stories from fiction.live",
 
@@ -28,7 +28,6 @@
     },
 
     "background": {
-        "scripts": ["jquery-3.6.0.min.js", "jszip.js",
-                    "browser_pack.js"]
+        "scripts": ["jquery-3.6.0.min.js", "jszip.min.js", "browser_pack.js"]
     }
 }
