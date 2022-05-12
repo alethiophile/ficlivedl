@@ -22,6 +22,10 @@ function url_basename(url) {
     return basename;
 }
 
+function download_running() {
+    return downloadState !== null && 'stage' in downloadState;
+}
+
 // Sends the current download state as a browser message. This will be picked up
 // by the popup code if the popup is currently displayed.
 function signal_state(state_msg) {
@@ -472,7 +476,7 @@ img {
                 filename: fn,
                 saveAs: true,
                 url: blobURL
-            });
+            }).catch(() => 0);
         },
         generate_archive: async function () {
             signal_state({
@@ -541,7 +545,7 @@ img {
                 filename: fn,
                 saveAs: true,
                 url: blobURL
-            });
+            }).catch(() => 0);
         }
     };
 }
@@ -580,23 +584,24 @@ function downloadStory(opts) {
     }).then(() => {
         signal_state(null);
     }).catch((e) => {
-        signal_state({ 'error': e });
+        signal_state({ 'error': e.message });
     });
 }
 
 browser.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     if (message.action === "download") {
-        if (downloadState === null) {
+        if (!download_running()) {
             downloadStory(message);
         }
         sendResponse();
         return true;
     }
     else if (message.action === "query_dl_state") {
-        sendResponse({
+        let resp = {
             response: 'good',
             state: downloadState
-        });
+        };
+        sendResponse(resp);
         return true;
     }
     return false;

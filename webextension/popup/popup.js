@@ -108,13 +108,10 @@ function handleIconClick() {
         action: 'query_dl_state'
     }).then(function (resp) {
         let dl_state = resp.state;
-        if (dl_state === null) {
-            setup_form();
-        }
-        else {
-            renderDownloadState(dl_state);
-        }
-    })
+        renderDownloadState(dl_state);
+    }).catch((e) => {
+        console.log(e);
+    });
 }
 
 window.onload = handleIconClick;
