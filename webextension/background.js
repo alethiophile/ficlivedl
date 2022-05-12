@@ -37,6 +37,14 @@ function to_filename(str) {
     return str.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]+/g, '');
 }
 
+function count_words(html) {
+    // Counts the words in an HTML string. First strips out all HTML tags, then
+    // counts remaining whitespace-delimited words.
+    let s = html.replace(/<[^>]+>/g, ' ');
+    let a = s.split(/\s+/);
+    return a.length;
+}
+
 function Story(url) {
     function chapter_url(story_id, start, end) {
         return `https://fiction.live/api/anonkun/chapters/${story_id}/${start}/${end}`;
@@ -129,8 +137,9 @@ function Story(url) {
                 all_html.push(`<div class="voteChapter">${html}</div>`);
             }
         }
-        chapter.html = all_html.join('<hr>');
+        chapter.html = `<h2>${chapter.metadata.title}</h2>` + all_html.join('<hr>');
         chapter.images = images;
+        chapter.words = count_words(chapter.html);
     }
 
     function get_node_id(url) {
@@ -141,6 +150,13 @@ function Story(url) {
         }
         let nodeId = res[1];
         return nodeId;
+    }
+
+    function format_date(d) {
+        return new Intl.DateTimeFormat('en-US', {
+            dateStyle: 'medium', timeStyle: 'long',
+            timeZone: 'UTC', hour12: false
+        }).format(d);
     }
 
     return {
@@ -161,8 +177,28 @@ function Story(url) {
                 return data;
             });
         },
+        story_url: function () {
+            let re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\//;
+            let match = url.match(re);
+            return match[0];
+        },
         title: function () {
             return this.node_metadata.t;
+        },
+        author: function () {
+            return this.node_metadata.u[0].n;
+        },
+        tags: function () {
+            return [...new Set(this.node_metadata.ta.concat(this.node_metadata.spoilerTags))];
+        },
+        words: function () {
+            return this.chapters.map(c => c.words).reduce((a, b) => a + b);
+        },
+        date_published: function () {
+            return new Date(this.node_metadata.ct);
+        },
+        date_updated: function () {
+            return new Date(this.node_metadata.ut);
         },
         set_chapter_urls: function () {
             if (this.node_metadata === null) {
@@ -326,6 +362,22 @@ function Story(url) {
                 };
             });
         },
+        make_title_page: function () {
+            let desc = `<p>${this.node_metadata.d}</p><p>${this.node_metadata.b}</p>`
+            let res = `<h1>${this.title()}</h1>
+
+<h2>by ${this.author()}</h2>
+
+<b>Published:</b> ${format_date(this.date_published())}<br />
+<b>Updated:</b> ${format_date(this.date_updated())}<br />
+<b>Words:</b> ${Intl.NumberFormat('en-US').format(this.words())}<br />
+<b>Tags:</b> ${this.tags().join(', ')}<br />
+<b>Source:</b> <a href="${this.story_url()}">${this.story_url()}</a><br />
+<b>Description:</b><br />
+${desc}
+`;
+            return res;
+        },
         generate_epub: function () {
             signal_state({
                 'title': this.title(),
@@ -334,14 +386,16 @@ function Story(url) {
             let metadata = {
                 id: `anonkun:${this.node_id}`,
                 cover: this.cover,
-                title: this.node_metadata.t,
-                author: this.node_metadata.u[0].n,
-                tags: this.node_metadata.ta.join(','),
+                title: this.title(),
+                author: this.author(),
+                tags: this.tags().join(','),
                 description: this.node_metadata.d,
-                source: url,
-                images: this.story_images
+                source: this.story_url(),
+                images: this.story_images,
+                published: this.date_published().toISOString(),
             };
             let epub = nodepub.document(metadata);
+            epub.addSection('Title Page', this.make_title_page());
             for (let c of this.chapters) {
                 let ctitle = c.metadata.title;
                 if (ctitle.startsWith('#special ')) {
@@ -389,7 +443,6 @@ img {
                     if (!f.compress || f.folder.indexOf('images') !== -1) {
                         opts.compression = 'STORE';
                     }
-                    console.log(f);
                     zip.file(path, f.content, opts);
                 }
                 console.log('generating zip');
@@ -407,7 +460,7 @@ img {
                 return p;
             }).then((blob) => {
                 console.log('got zip blob');
-                let fn = to_filename(this.node_metadata.t) + '.epub';
+                let fn = to_filename(this.title()) + '.epub';
                 let blobURL = URL.createObjectURL(blob);
                 return browser.downloads.download({
                     filename: fn,
