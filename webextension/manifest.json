@@ -29,5 +29,11 @@
 
     "background": {
         "scripts": ["jquery-3.6.0.min.js", "jszip.min.js", "browser_pack.js"]
+    },
+
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "ficlivedl@alethiophile.dev"
+        }
     }
 }

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# nodepub depends on archiver, which in turn depends on the entire NPM
+# package archive apparently; luckily, this use case doesn't use
+# archiver, so we ignore it
 if [[ $1 == "dev" ]]; then
     node_modules/.bin/browserify --ignore archiver webextension/background.js >webextension/browser_pack.js
 else
