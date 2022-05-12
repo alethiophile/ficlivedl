@@ -55,6 +55,14 @@ function Story(opts) {
         });
     }
 
+    function process_chapter_title(t) {
+        let ctitle = t;
+        if (ctitle.startsWith('#special ')) {
+            ctitle = ctitle.replace('#special ', 'Appendix: ');
+        }
+        return ctitle;
+    }
+
     // This takes a chapter object that has been downloaded (i.e. has
     // a data member), processes the HTML of all entries, and creates
     // html and images members on the object. Also responsible for
@@ -151,7 +159,8 @@ function Story(opts) {
                 all_html.push(`<div class="voteChapter">${html}</div>`);
             }
         }
-        chapter.html = `<h2>${chapter.metadata.title}</h2>` + all_html.join('<hr>');
+        let ctitle = process_chapter_title(chapter.metadata.title);
+        chapter.html = `<h2>${ctitle}</h2>` + all_html.join('<hr>');
         chapter.images = images;
         chapter.words = count_words(chapter.html);
     }
@@ -416,11 +425,8 @@ ${desc}
                 if (!opts.download_special && c.special) {
                     continue;
                 }
-                let ctitle = c.metadata.title;
-                if (ctitle.startsWith('#special ')) {
-                    ctitle = ctitle.replace('#special ', 'Appendix: ');
-                }
-                epub.addSection(ctitle, c.html);
+                epub.addSection(process_chapter_title(c.metadata.title),
+                                c.html);
             }
 
             epub.addCSS(`.vote {
