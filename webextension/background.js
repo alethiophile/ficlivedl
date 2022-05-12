@@ -510,6 +510,7 @@ img {
                     content: i.content
                 });
             }
+            files.push(this.cover);
             let zip = new JSZip();
             for (let f of files) {
                 // let path = f.folder !== '' ? `${f.folder}/${f.name}` : f.name;
