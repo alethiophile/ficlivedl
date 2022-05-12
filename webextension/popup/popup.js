@@ -6,7 +6,9 @@ function handleDownloadClick() {
     }
     browser.runtime.sendMessage({
         action: 'download',
-        url: curTab.url
+        url: curTab.url,
+        // TODO make this an option
+        download_special: true
     });
 }
 
