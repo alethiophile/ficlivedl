@@ -259,64 +259,51 @@ function Story(opts) {
             this.chapters = chapters;
             return true;
         },
-        /* this function is a mess of callback spaghetti that is only structured
-           that way because async programming fills me with the misguided urge
-           to overoptimize
-
-           specifically, it would be much simpler as an async function that just
-           did the process_html calls between downloads, but this would mean
-           leaving the CPU idle during the network wait time, which offends my
-           aesthetic sense
-
-           therefore, I instead construct the promise chain manually, such that
-           the promise for each chapter download chains into both the next
-           chapter download, and the HTML processing function
-
-           then I return a promise that chains off the final processing
-           function, so the promise for the function as a whole resolves once
-           the final chapter processing is done
-
-           also, the browser is single-threaded to begin with, so maybe I just
-           don't gain anything here at all (?)
-        */
-        download_chapters: function () {
+        download_chapters: async function () {
             let num_downloaded = 0;
             let total_to_download = this.chapters.filter(x => (opts.download_special || !x.special)).length;
-            let fulfill_func;
-            let chapter_promise = new Promise((resolve) => { fulfill_func = resolve; });
             let node_md = this.node_metadata;
-            let done_processing;
             for (let c of this.chapters) {
                 if (!opts.download_special && c.special) {
                     continue;
                 }
-                let p = chapter_promise.then(function () {
-                    signal_state({
-                        'title': node_md.t,
-                        'stage': 'Fetching chapters',
-                        'done': num_downloaded,
-                        'total': total_to_download
-                    });
-                    let u = c.url;
-                    return $.get(u);
+                signal_state({
+                    'title': node_md.t,
+                    'stage': 'Fetching chapters',
+                    'done': num_downloaded,
+                    'total': total_to_download
                 });
-                done_processing = p.then(function (data) {
-                    c.data = data;
-                    num_downloaded += 1;
-                    process_html(c);
-                    console.log(c);
-                });
-                chapter_promise = p.then(() => new Promise(r => setTimeout(r, this.download_delay * 1000)));
+                let u = c.url;
+                let tries = 3;
+                let data;
+                while (tries > 0) {
+                    try {
+                        data = await $.get(u);
+                    } catch (e) {
+                        // any fetch error is typically a 400 that seems to be a
+                        // "server overloaded" or similar back-off message; wait
+                        // 4x the typical delay, then try again
+                        console.log(e);
+                        if (tries <= 0) {
+                            throw e;
+                        }
+                        await new Promise(r => setTimeout(r, this.download_delay * 1000 * 4));
+                        tries -= 1;
+                        continue;
+                    }
+                    break;
+                }
+                let wait_until = Date.now() + this.download_delay * 1000;
+                c.data = data;
+                num_downloaded += 1;
+                process_html(c);
+                console.log(c);
+                let wait_time = Math.max(wait_until - Date.now(), 0);
+                await new Promise(r => setTimeout(r, wait_time));
             }
-            // resolve the initial promise to kick off the chain
-            fulfill_func();
-            // the promise returned from this function chains off the final
-            // done_processing promise, which fires when the final chapter has
-            // been downloaded and processed -- the final chapter_promise is
-            // just a hanging delay that doesn't have anything chained off it
-            return done_processing;
+            return;
         },
-        download_images: function () {
+        download_images: async function () {
             // This function relies on all the images being under domains that
             // ficlivedl has permissions for. Currently the images are hosted at
             // cdn*.fiction.live, and the extension has permissions for
@@ -324,8 +311,6 @@ function Story(opts) {
             // if the image hosting changes again then the extension may break.
             this.story_images = [];
             let image_urls = new Set();
-            let fulfill_func;
-            let chapter_promise = new Promise((resolve) => { fulfill_func = resolve; });
             for (let c of this.chapters) {
                 let il = 'images' in c ? c.images : [];
                 for (let i of il) {
@@ -335,30 +320,25 @@ function Story(opts) {
             this.total_story_images = image_urls.size;
             let num_downloaded = 0;
             for (let i of image_urls) {
-                let p = chapter_promise.then(() => {
-                    signal_state({
-                        'title': this.title(),
-                        'stage': 'Fetching images',
-                        'done': num_downloaded,
-                        'total': image_urls.size + 1
-                    });
-                    return $.ajax({
-                        url: i,
-                        xhrFields: {
-                            responseType: 'blob'
-                        }
-                    }).then((data) => {
-                        num_downloaded += 1;
-                        this.story_images.push({
-                            name: url_basename(i),
-                            content: data
-                        });
-                    });
+                signal_state({
+                    'title': this.title(),
+                    'stage': 'Fetching images',
+                    'done': num_downloaded,
+                    'total': image_urls.size + 1
                 });
-                chapter_promise = p;
+                let data = await $.ajax({
+                    url: i,
+                    xhrFields: {
+                        responseType: 'blob'
+                    }
+                });
+                num_downloaded += 1;
+                this.story_images.push({
+                    name: url_basename(i),
+                    content: data
+                });
             }
-            fulfill_func();
-            return chapter_promise;
+            return;
         },
         download_cover: function () {
             signal_state({
@@ -403,7 +383,7 @@ ${desc}
 `;
             return res;
         },
-        generate_epub: function () {
+        generate_epub: async function () {
             signal_state({
                 'title': this.title(),
                 'stage': 'Generating ePUB file',
@@ -457,41 +437,39 @@ img {
 }
 `);
 
-            return epub.getFilesForEPUB().then((files) => {
-                console.log('got epub files');
-                let zip = new JSZip();
-                for (let f of files) {
-                    let path = f.folder !== '' ? `${f.folder}/${f.name}` : f.name;
-                    let opts = {};
-                    // we don't bother compressing image files, they're usually
-                    // already compressed by the format
-                    if (!f.compress || f.folder.indexOf('images') !== -1) {
-                        opts.compression = 'STORE';
-                    }
-                    zip.file(path, f.content, opts);
+            let files = await epub.getFilesForEPUB();
+            console.log('got epub files');
+            let zip = new JSZip();
+            for (let f of files) {
+                let path = f.folder !== '' ? `${f.folder}/${f.name}` : f.name;
+                let opts = {};
+                // we don't bother compressing image files, they're usually
+                // already compressed by the format
+                if (!f.compress || f.folder.indexOf('images') !== -1) {
+                    opts.compression = 'STORE';
                 }
-                console.log('generating zip');
-                let p = zip.generateAsync({
-                    compression: 'DEFLATE',
-                    type: 'blob'
-                }, md => {
-                    signal_state({
-                        'title': this.title(),
-                        'stage': 'Generating ePUB file',
-                        'done': Math.floor(md.percent),
-                        'total': 100
-                    });
+                zip.file(path, f.content, opts);
+            }
+            console.log('generating zip');
+            let blob = await zip.generateAsync({
+                compression: 'DEFLATE',
+                type: 'blob'
+            }, md => {
+                signal_state({
+                    'title': this.title(),
+                    'stage': 'Generating ePUB file',
+                    'done': Math.floor(md.percent),
+                    'total': 100
                 });
-                return p;
-            }).then((blob) => {
-                console.log('got zip blob');
-                let fn = to_filename(this.title()) + '.epub';
-                let blobURL = URL.createObjectURL(blob);
-                return browser.downloads.download({
-                    filename: fn,
-                    saveAs: true,
-                    url: blobURL
-                });
+            });
+
+            console.log('got zip blob');
+            let fn = to_filename(this.title()) + '.epub';
+            let blobURL = URL.createObjectURL(blob);
+            return browser.downloads.download({
+                filename: fn,
+                saveAs: true,
+                url: blobURL
             });
         }
     };
