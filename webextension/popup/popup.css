@@ -1,0 +1,17 @@
+html, body {
+    width: 300px;
+}
+
+h2 {
+    text-align: center;
+    margin-top: 2px;
+}
+
+button {
+    margin: 5px;
+    text-align: center;
+}
+
+#dl_state {
+    display: none;
+}
