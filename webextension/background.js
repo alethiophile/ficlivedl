@@ -438,9 +438,9 @@ ${desc}
             let metadata = {
                 id: `anonkun:${this.node_id}`,
                 cover: this.cover,
-                title: this.title(),
-                author: this.author(),
-                tags: this.tags().join(','),
+                title: escape_html(this.title()),
+                author: escape_html(this.author()),
+                tags: escape_html(this.tags().join(',')),
                 description: this.node_metadata.d,
                 source: this.story_url(),
                 images: this.story_images,
