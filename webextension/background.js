@@ -313,11 +313,11 @@ function Story(opts) {
                         // "server overloaded" or similar back-off message; wait
                         // 4x the typical delay, then try again
                         console.log(e);
+                        tries -= 1;
                         if (tries <= 0) {
                             throw e;
                         }
                         await new Promise(r => setTimeout(r, this.download_delay * 1000 * 4));
-                        tries -= 1;
                         continue;
                     }
                     break;
@@ -348,19 +348,37 @@ function Story(opts) {
             }
             this.total_story_images = image_urls.size;
             let num_downloaded = 0;
-            for (let i of image_urls) {
+            all_images: for (let i of image_urls) {
                 signal_state({
                     'title': this.title(),
                     'stage': 'Fetching images',
                     'done': num_downloaded,
                     'total': image_urls.size + 1
                 });
-                let data = await $.ajax({
-                    url: i,
-                    xhrFields: {
-                        responseType: 'blob'
+                let tries = 3;
+                let data;
+                while (tries > 0) {
+                    try {
+                        data = await $.ajax({
+                            url: i,
+                            xhrFields: {
+                                responseType: 'blob'
+                            }
+                        });
                     }
-                });
+                    catch (e) {
+                        console.log(e);
+                        tries -= 1;
+                        if (tries <= 0) {
+                            console.log(`couldn't download image '${i}', giving up`);
+                            num_downloaded += 1;
+                            continue all_images;
+                        }
+                        await new Promise(r => setTimeout(r, this.download_delay * 1000 * 4));
+                        continue;
+                    }
+                    break;
+                }
                 num_downloaded += 1;
                 this.story_images.push({
                     name: url_basename(i),
