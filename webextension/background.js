@@ -135,7 +135,7 @@ function Story(opts) {
                 }
                 let entries = [];
                 for (let k of votes) {
-                    let ent_html = `<p>${e.votes[k]}</p>`;
+                    let ent_html = `<p>${escape_html(e.votes[k])}</p>`;
                     if (k in dice) {
                         ent_html = `<div class="dice">${dice[k]}</div>` + ent_html;
                         delete dice[k];
