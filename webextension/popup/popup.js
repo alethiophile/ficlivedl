@@ -31,19 +31,19 @@ function renderDownloadState(state) {
         setup_form();
         if (state !== null && 'error' in state) {
             $('#error').show();
-            $('#error').html('Error: ' + state.error);
+            $('#error').text('Error: ' + state.error);
         } else {
             $('#error').hide();
         }
     } else {
         $('#new_dl').hide();
         $('#dl_state').show();
-        $('#dl_story_title').html(state.title);
-        $('#dl_stage').html(state.stage);
+        $('#dl_story_title').text(state.title);
+        $('#dl_stage').text(state.stage);
         if ('done' in state) {
             $('#dl_progress').show();
-            $('#dl_done').html(state.done + 1);
-            $('#dl_total').html(state.total);
+            $('#dl_done').text(state.done + 1);
+            $('#dl_total').text(state.total);
         } else {
             $('#dl_progress').hide();
         }
@@ -55,11 +55,11 @@ let adv_shown = false;
 function adv_toggle() {
     if (adv_shown) {
         $('#adv').hide();
-        $('#adv_arrow').html('⯈');
+        $('#adv_arrow').text('⯈');
         adv_shown = false;
     } else {
         $('#adv').show();
-        $('#adv_arrow').html('⯆');
+        $('#adv_arrow').text('⯆');
         adv_shown = true;
     }
 }
