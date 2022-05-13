@@ -50,6 +50,25 @@ function count_words(html) {
     return a.length;
 }
 
+// it turns out Apple Books is fucking autistic about having tags closed even
+// when it's completely semantically meaningless
+// lrn2html
+function fix_html_tags(html) {
+    html = html.replace(/<img([^>]+[^>/])?>/g, "<img$1 />");
+    html = html.replace(/<hr([^>]*[^/>])?>/g, "<hr$1 />");
+    html = html.replace(/<br([^>]*[^/>])?>/g, "<br$1 />");
+    return html
+}
+
+function escape_html(txt) {
+    return txt
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
 function Story(opts) {
     function chapter_url(story_id, start, end) {
         return `https://fiction.live/api/anonkun/chapters/${story_id}/${start}/${end}`;
@@ -99,14 +118,16 @@ function Story(opts) {
                     // if no images, then all these elements are just removed
                     $dom.find('figure').remove();
                 }
-                all_html.push($dom.prop('outerHTML'));
+                html = $dom.prop('outerHTML');
+
+                all_html.push(fix_html_tags(html));
             }
             else if (e.nt === 'readerPost') {
                 if (!opts.reader_posts) {
                     continue;
                 }
                 let title = 'b' in e ? e.b : 'Reader Posts';
-                let html = `<h3>${title}</h3>`;
+                let html = `<h3>${escape_html(title)}</h3>`;
                 let votes = 'votes' in e ? Object.getOwnPropertyNames(e.votes) : [];
                 let dice = {};
                 if ('dice' in e) {
@@ -124,8 +145,9 @@ function Story(opts) {
                 for (let k in dice) {
                     entries.push(`<div class="dice">${dice[k]}</div>`);
                 }
-                html += entries.join('<hr>');
-                all_html.push(`<div class="readerVote">${html}</div>`);
+                html += entries.join('<hr />');
+                html = `<div class="readerVote">${html}</div>`;
+                all_html.push(fix_html_tags(html));
             }
             else if (e.nt === 'choice') {
                 let title = 'b' in e ? e.b : 'Choices';
@@ -153,20 +175,21 @@ function Story(opts) {
                 votes.sort((a, b) => a.xout - b.xout);
                 for (let v of votes) {
                     if (!v.xout) {
-                        html += `<div class="vote"><div class="voteText">${v.vote}</div><span class="voteCount">${v.count}</span></div>`;
+                        html += `<div class="vote"><div class="voteText">${escape_html(v.vote)}</div><span class="voteCount">${v.count}</span></div>`;
                     } else {
-                        html += `<div class="vote"><div class="voteText"><s>${v.vote}</s>`;
+                        html += `<div class="vote"><div class="voteText"><s>${escape_html(v.vote)}</s>`;
                         if ('reason' in v) {
-                            html += `<br>${v.reason}`;
+                            html += `<br />${escape_html(v.reason)}`;
                         }
                         html += '</div></div>';
                     }
                 }
-                all_html.push(`<div class="voteChapter">${html}</div>`);
+                html = `<div class="voteChapter">${html}</div>`;
+                all_html.push(fix_html_tags(html));
             }
         }
         let ctitle = process_chapter_title(chapter.metadata.title);
-        chapter.html = `<h2>${ctitle}</h2>` + all_html.join('<hr>');
+        chapter.html = `<h2>${escape_html(ctitle)}</h2>` + all_html.join('<hr />');
         chapter.images = images;
         chapter.words = count_words(chapter.html);
     }
