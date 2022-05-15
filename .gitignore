@@ -1,3 +1,4 @@
 webextension/browser_pack.js
 node_modules/
 web-ext-artifacts/
+webextension-brave/
