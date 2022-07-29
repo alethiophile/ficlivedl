@@ -108,6 +108,10 @@ function Story(opts) {
                 $dom.find('img').each(function () {
                     let $this = $(this);
                     let src = $this.attr('src');
+                    if (src === undefined) {
+                        console.log("image URL undefined");
+                        return;
+                    }
                     images.push(src);
                     $this.attr('src', '../images/' + url_basename(src));
                 });
@@ -326,7 +330,7 @@ function Story(opts) {
                 c.data = data;
                 num_downloaded += 1;
                 process_html(c);
-                console.log(c);
+                // console.log(c);
                 let wait_time = Math.max(wait_until - Date.now(), 0);
                 await new Promise(r => setTimeout(r, wait_time));
             }
