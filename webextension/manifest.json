@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "Fiction.live Downloader",
-    "version": "0.1.1",
+    "version": "0.1.2",
 
     "description": "Download stories from fiction.live",
 
