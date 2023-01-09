@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "jquery": "^3.6.3",
     "nodepub": "github:alethiophile/nodepub",
     "sanitize-html": "^2.7.0"
   },
