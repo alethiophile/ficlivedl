@@ -11,7 +11,8 @@ let $ = require('jquery');
 let JSZip = require('jszip');
 
 function is_node() {
-    return (typeof process !== 'undefined') && (process.release.name === 'node');
+    console.log(process);
+    return (typeof process !== 'undefined') && (typeof process.release !== 'undefined') && (process.release.name === 'node');
 }
 
 function url_basename(url) {
