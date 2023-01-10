@@ -7,12 +7,21 @@
 
 let nodepub = require('nodepub');
 let sanitizeHtml = require('sanitize-html');
-let $ = require('jquery');
 let JSZip = require('jszip');
 
 function is_node() {
-    console.log(process);
     return (typeof process !== 'undefined') && (typeof process.release !== 'undefined') && (process.release.name === 'node');
+}
+
+let $;
+if (is_node()) {
+    let jsdom = require('jsdom');
+    let dom = new jsdom.JSDOM();
+    global.document = (new jsdom.JSDOM('')).window.document
+    $ = require('jquery')(dom.window);
+}
+else {
+    $ = require('jquery');
 }
 
 function url_basename(url) {
@@ -94,7 +103,6 @@ function Story(opts, funcs) {
                     let $this = $(this);
                     let src = $this.attr('src');
                     if (src === undefined) {
-                        console.log("image URL undefined");
                         return;
                     }
                     images.push(src);
@@ -301,7 +309,6 @@ function Story(opts, funcs) {
                         // any fetch error is typically a 400 that seems to be a
                         // "server overloaded" or similar back-off message; wait
                         // 4x the typical delay, then try again
-                        console.log(e);
                         tries -= 1;
                         if (tries <= 0) {
                             throw e;
@@ -315,7 +322,6 @@ function Story(opts, funcs) {
                 c.data = data;
                 num_downloaded += 1;
                 process_html(c);
-                // console.log(c);
                 let wait_time = Math.max(wait_until - Date.now(), 0);
                 await funcs.wait(wait_time / 1000)
             }
@@ -351,10 +357,8 @@ function Story(opts, funcs) {
                         data = await get_url(i, true);
                     }
                     catch (e) {
-                        console.log(e);
                         tries -= 1;
                         if (tries <= 0) {
-                            console.log(`couldn't download image '${i}', giving up`);
                             num_downloaded += 1;
                             continue all_images;
                         }
@@ -464,7 +468,6 @@ img {
 `);
 
             let files = await epub.getFilesForEPUB();
-            console.log('got epub files');
             let zip = new JSZip();
             for (let f of files) {
                 let path = f.folder !== '' ? `${f.folder}/${f.name}` : f.name;
@@ -476,7 +479,6 @@ img {
                 }
                 zip.file(path, f.content, opts);
             }
-            console.log('generating zip');
             let type = is_node() ? 'nodebuffer' : 'blob';
             let blob = await zip.generateAsync({
                 compression: 'DEFLATE',
@@ -490,7 +492,6 @@ img {
                 });
             });
 
-            console.log('got zip blob');
             let fn = to_filename(this.title()) + '.epub';
 
             return funcs.save_file(fn, blob);
@@ -582,7 +583,6 @@ funcs has three members:
 function downloadStory(opts, funcs) {
     let story = Story(opts, funcs);
     story.download_node().then(() => {
-        console.log(story.node_metadata);
         return story.download_chapters();
     }).then(() => {
         if (opts.download_images) {
@@ -602,7 +602,6 @@ function downloadStory(opts, funcs) {
     }).then(() => {
         funcs.signal_state(null);
     }).catch((e) => {
-        console.log({ error: e });
         funcs.signal_state({ 'error': e.message });
     });
 }
