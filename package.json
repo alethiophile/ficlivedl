@@ -9,7 +9,9 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "cli-progress": "^3.11.2",
     "jquery": "^3.6.3",
+    "jsdom": "^21.0.0",
     "jszip": "^3.10.1",
     "nodepub": "github:alethiophile/nodepub",
     "sanitize-html": "^2.7.0"
