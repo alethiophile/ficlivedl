@@ -10,7 +10,9 @@ let sanitizeHtml = require('sanitize-html');
 let JSZip = require('jszip');
 
 function is_node() {
-    return (typeof process !== 'undefined') && (typeof process.release !== 'undefined') && (process.release.name === 'node');
+    return (typeof process !== 'undefined') &&
+        (typeof process.release !== 'undefined') &&
+        (process.release.name === 'node');
 }
 
 let $;

@@ -94,12 +94,12 @@ let funcs = {
             title_shown = true;
         }
         if (current_stage !== state.stage) {
+            if (bar !== null) {
+                bar.stop();
+            }
             console.log("\n" + state.stage);
             current_stage = state.stage;
             if (state.total) {
-                if (bar !== null) {
-                    bar.stop();
-                }
                 bar = new progress.Bar();
                 bar.start(state.total, state.done);
             }
