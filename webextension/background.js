@@ -58,6 +58,9 @@ let funcs = {
             url: url,
             xhrFields: xhrFields
         });
+    },
+    wait: async function (seconds) {
+        await new Promise(r => setTimeout(r, seconds * 1000));
     }
 };
 

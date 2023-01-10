@@ -306,7 +306,7 @@ function Story(opts, funcs) {
                         if (tries <= 0) {
                             throw e;
                         }
-                        await new Promise(r => setTimeout(r, this.download_delay * 1000 * 4));
+                        await funcs.wait(this.download_delay * 4)
                         continue;
                     }
                     break;
@@ -317,7 +317,7 @@ function Story(opts, funcs) {
                 process_html(c);
                 // console.log(c);
                 let wait_time = Math.max(wait_until - Date.now(), 0);
-                await new Promise(r => setTimeout(r, wait_time));
+                await funcs.wait(wait_time / 1000)
             }
             return;
         },
@@ -358,7 +358,7 @@ function Story(opts, funcs) {
                             num_downloaded += 1;
                             continue all_images;
                         }
-                        await new Promise(r => setTimeout(r, this.download_delay * 1000 * 4));
+                        await funcs.wait(this.download_delay * 4);
                         continue;
                     }
                     break;
