@@ -63,6 +63,21 @@ function escape_html(txt) {
          .replace(/'/g, "&#039;");
 }
 
+// the fiction.live frontend script does a bunch of manual transforms
+// on the image URLs the API ships out before actually fetching them;
+// this is incredibly stupid but there you go
+let image_cdn = 'cdn6.fiction.live';
+function process_image_url(url) {
+    let u = new URL(url);
+    if (u.hostname.endsWith("fiction.live") || u.hostname.endsWith("cloudfront.net")) {
+        let real_url = `https://${image_cdn}/file/fictionlive${u.pathname}`;
+        return real_url;
+    }
+    else {
+        return url;
+    }
+}
+
 function Story(opts, funcs) {
     let signal_state = funcs.signal_state;
     let get_url = funcs.get_url;
@@ -324,6 +339,7 @@ function Story(opts, funcs) {
                 c.data = data;
                 num_downloaded += 1;
                 process_html(c);
+                // console.log(`chapter ${num_downloaded}`, c.images);
                 let wait_time = Math.max(wait_until - Date.now(), 0);
                 await funcs.wait(wait_time / 1000)
             }
@@ -340,7 +356,8 @@ function Story(opts, funcs) {
             for (let c of this.chapters) {
                 let il = 'images' in c ? c.images : [];
                 for (let i of il) {
-                    image_urls.add(i);
+                    let u = process_image_url(i);
+                    image_urls.add(u);
                 }
             }
             this.total_story_images = image_urls.size;
@@ -359,6 +376,7 @@ function Story(opts, funcs) {
                         data = await get_url(i, true);
                     }
                     catch (e) {
+                        console.log(e, tries);
                         tries -= 1;
                         if (tries <= 0) {
                             num_downloaded += 1;
@@ -377,7 +395,7 @@ function Story(opts, funcs) {
             }
             return;
         },
-        download_cover: function () {
+        download_cover: async function () {
             signal_state({
                 'title': this.title(),
                 'stage': 'Fetching images',
@@ -392,12 +410,27 @@ function Story(opts, funcs) {
                 cover_url = "https://placekitten.com/g/800/600";
                 cover_name = "cover.jpg";
             }
-            return get_url(cover_url, true).then((data) => {
-                this.cover = {
-                    name: cover_name,
-                    content: data
-                };
-            });
+            let u = process_image_url(cover_url);
+            try {
+                return await get_url(u, true).then((data) => {
+                    this.cover = {
+                        name: cover_name,
+                        content: data
+                    };
+                });
+            }
+            // we do need a cover, so in case of download error fall
+            // back on the kitten
+            catch (e) {
+                cover_url = "https://placekitten.com/g/800/600";
+                cover_name = "cover.jpg";
+                return await get_url(cover_url, true).then((data) => {
+                    this.cover = {
+                        name: cover_name,
+                        content: data
+                    };
+                });
+            }
         },
         make_title_page: function () {
             let desc = `<p>${this.node_metadata.d}</p><p>${this.node_metadata.b}</p>`
@@ -604,6 +637,7 @@ function downloadStory(opts, funcs) {
     }).then(() => {
         funcs.signal_state(null);
     }).catch((e) => {
+        console.error(e);
         funcs.signal_state({ 'error': e.message });
     });
 }
