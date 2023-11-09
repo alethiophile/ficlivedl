@@ -10,6 +10,8 @@ if [[ $1 == "dev" ]]; then
     mv webextension-brave/manifest-brave.json webextension-brave/manifest.json
     cp node_modules/webextension-polyfill/dist/browser-polyfill.min.js webextension-brave
 else
-    node_modules/.bin/browserify --ignore archiver  webextension/background.js --plugin tinyify >webextension/browser_pack.js
+    # node_modules/.bin/browserify --ignore archiver  webextension/background.js --plugin tinyify >webextension/browser_pack.js
+    # tinyify is breaking on something, so take it out for now
+    node_modules/.bin/browserify --ignore archiver  webextension/background.js >webextension/browser_pack.js
     web-ext build -s webextension/ -i jszip.js -i background.js --overwrite-dest
 fi
