@@ -1,6 +1,6 @@
 {
   "name": "ficlivedl",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "description": "WebExtension for downloading fiction.live stories",
   "bin": "index.js",
   "scripts": {

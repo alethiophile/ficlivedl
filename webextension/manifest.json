@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "Fiction.live Downloader",
-    "version": "0.1.4",
+    "version": "0.1.5",
 
     "description": "Download stories from fiction.live",
 
@@ -33,7 +33,10 @@
 
     "browser_specific_settings": {
         "gecko": {
-            "id": "ficlivedl@alethiophile.dev"
+            "id": "ficlivedl@alethiophile.dev",
+            "data_collection_permissions": {
+                "required": ["none"]
+            }
         }
     }
 }
