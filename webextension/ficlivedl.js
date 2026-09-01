@@ -66,16 +66,33 @@ function escape_html(txt) {
 // the fiction.live frontend script does a bunch of manual transforms
 // on the image URLs the API ships out before actually fetching them;
 // this is incredibly stupid but there you go
-let image_cdn = 'cdn6.fiction.live';
+// Mirrors ty.imageURLParser full-size path (and FanFicFare's img_url_trans):
+// cloudfront / filepicker / cdn3|cdn4 -> cdn6; already-final cdn6 URLs stay put.
 function process_image_url(url) {
-    let u = new URL(url);
-    if (u.hostname.endsWith("fiction.live") || u.hostname.endsWith("cloudfront.net")) {
-        let real_url = `https://${image_cdn}/file/fictionlive${u.pathname}`;
-        return real_url;
-    }
-    else {
+    if (!url || typeof url !== 'string') {
         return url;
     }
+    if (url.startsWith('//')) {
+        url = 'https:' + url;
+    }
+    url = url.replace(/(\w+)\.cloudfront\.net/g, 'cdn6.fiction.live/file/fictionlive');
+    url = url.replace(/www\.filepicker\.io\/api\/file\/(\w+)/g, 'cdn4.fiction.live/fp/$1');
+    url = url.replace(/cdn[34]\.fiction\.live\/(.+)/g, 'cdn6.fiction.live/file/fictionlive/$1');
+    return url;
+}
+
+// 1x1 PNG used when cover download fails (nodepub requires a cover image)
+function placeholder_cover_blob() {
+    const b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    if (typeof Buffer !== 'undefined') {
+        return Buffer.from(b64, 'base64');
+    }
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+        arr[i] = bin.charCodeAt(i);
+    }
+    return new Blob([arr], { type: 'image/png' });
 }
 
 function Story(opts, funcs) {
@@ -403,34 +420,27 @@ function Story(opts, funcs) {
                 'total': this.total_story_images + 1
             });
             let cover_url, cover_name;
-            if ('i' in this.node_metadata) {
+            if ('i' in this.node_metadata && this.node_metadata.i && this.node_metadata.i[0]) {
                 cover_url = this.node_metadata.i[0];
                 cover_name = url_basename(cover_url);
-            } else {
-                cover_url = "https://placekitten.com/g/800/600";
-                cover_name = "cover.jpg";
-            }
-            let u = process_image_url(cover_url);
-            try {
-                return await get_url(u, true).then((data) => {
+                let u = process_image_url(cover_url);
+                try {
+                    let data = await get_url(u, true);
                     this.cover = {
                         name: cover_name,
                         content: data
                     };
-                });
+                    return;
+                }
+                catch (e) {
+                    // fall through to embedded placeholder
+                }
             }
-            // we do need a cover, so in case of download error fall
-            // back on the kitten
-            catch (e) {
-                cover_url = "https://placekitten.com/g/800/600";
-                cover_name = "cover.jpg";
-                return await get_url(cover_url, true).then((data) => {
-                    this.cover = {
-                        name: cover_name,
-                        content: data
-                    };
-                });
-            }
+            // nodepub requires a cover; use embedded 1x1 PNG if missing/failed
+            this.cover = {
+                name: 'cover.png',
+                content: placeholder_cover_blob()
+            };
         },
         make_title_page: function () {
             let desc = `<p>${this.node_metadata.d}</p><p>${this.node_metadata.b}</p>`
