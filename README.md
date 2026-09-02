@@ -11,6 +11,7 @@ store](https://addons.mozilla.org/en-US/firefox/addon/fiction-live-downloader/).
 $ npm install
 $ ./index.js STORY_URL
 $ ./index.js --file-type archive STORY_URL
+$ ./index.js --file-type dir --out story_data STORY_URL
 $ ./index.js --file-type metadata STORY_URL
 $ ./index.js list-stories --out stories.json
 ```
@@ -23,14 +24,20 @@ $ ./index.js list-stories --out stories.json
 
 Options:
 
-- `--file-type epub|archive|metadata` (default `epub`)
+- `--file-type epub|archive|dir|metadata` (default `epub`)
   - `epub` — e-book for readers
   - `archive` — ZIP with raw JSON, rendered HTML, images, **chat**, and **topics**
+  - `dir` — same contents as `archive`, written as an uncompressed directory
   - `metadata` — story node JSON only (`*.metadata.json`)
-- `--no-appendices` — omit `#special` appendix chapters (ePub only; archive always includes them)
-- `--no-images` — skip image binaries (URLs remain in JSON for archive)
-- `--no-writeins` — omit reader posts (ePub only; archive always includes them)
+- `--out` / `-o` — output path (file for epub/archive/metadata; directory for `dir`)
+- `--delay SECONDS` — wait between API requests (default `0.5`)
+- `--user-agent STR` — HTTP User-Agent (default identifies ficlivedl)
+- `--no-appendices` — omit `#special` appendix chapters (ePub only; archive/dir always include them)
+- `--no-images` — skip image binaries (URLs remain in JSON for archive/dir)
+- `--no-writeins` — omit reader posts (ePub only; archive/dir always include them)
 - `--quiet` / `-q` — suppress progress and status messages (errors still print)
+
+Hard failures exit with status code 1.
 
 ### List stories
 
@@ -38,16 +45,19 @@ Dump the `/stories` board to JSON (for bulk-archive planning):
 
 ```
 ./index.js list-stories --out stories.json
-./index.js list-stories --start-page 1 --end-page 5 --sort new
+./index.js list-stories --start-page 1 --end-page 5 --sort new --delay 2
 ```
 
 Options: `--out`/`-o`, `--start-page`, `--end-page`, `--sort`
 (`new|active|hot|chapter|replies|like`), `--board` (default `stories`),
-`--quiet`/`-q` (progress off; JSON on stdout unchanged).
+`--delay`, `--user-agent`, `--quiet`/`-q` (progress off; JSON on stdout
+unchanged).
 
 Each story object is the raw API payload plus a derived `url`.
 
 ### Full data archive layout
+
+Used by both `--file-type archive` (ZIP) and `--file-type dir` (directory):
 
 ```
 metadata.json

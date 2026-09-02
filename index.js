@@ -4,6 +4,7 @@
 let ficlivedl = require('./webextension/ficlivedl');
 let progress = require('cli-progress');
 let fs = require('node:fs/promises');
+let path = require('node:path');
 let http = require('http');
 let https = require('https');
 
@@ -11,6 +12,9 @@ let current_stage = null;
 let title_shown = false;
 let bar = null;
 let quiet = false;
+let out_path = null;
+let user_agent = 'ficlivedl/0.2 (+https://github.com/alethiophile/ficlivedl)';
+let download_failed = false;
 
 function request_promise(url, options = {}) {
     let method = options.method || 'GET';
@@ -30,13 +34,17 @@ function request_promise(url, options = {}) {
     }
 
     let u = new URL(url);
+    let headers = Object.assign({}, options.headers || {});
+    if (!headers['user-agent'] && !headers['User-Agent']) {
+        headers['user-agent'] = user_agent;
+    }
     let req_opts = {
         protocol: u.protocol,
         hostname: u.hostname,
         port: u.port || undefined,
         path: u.pathname + u.search,
         method: method,
-        headers: Object.assign({}, options.headers || {})
+        headers: headers
     };
     if (body !== null) {
         req_opts.headers['content-type'] = req_opts.headers['content-type'] ||
@@ -92,6 +100,13 @@ function request_promise(url, options = {}) {
     });
 }
 
+async function ensure_parent_dir(file_path) {
+    let dir = path.dirname(file_path);
+    if (dir && dir !== '.') {
+        await fs.mkdir(dir, { recursive: true });
+    }
+}
+
 let funcs = {
     signal_state: function (state) {
         if (state === null) {
@@ -102,6 +117,7 @@ let funcs = {
             return;
         }
         if (state.error) {
+            download_failed = true;
             console.error(state.error);
             return;
         }
@@ -131,11 +147,35 @@ let funcs = {
         }
     },
     save_file: async function (name, data) {
-        await fs.writeFile(name, data, {
+        let dest = out_path || name;
+        await ensure_parent_dir(dest);
+        await fs.writeFile(dest, data, {
             mode: 0o644,
         });
         if (!quiet) {
-            console.error(`\nWrote ${name}`);
+            console.error(`\nWrote ${dest}`);
+        }
+    },
+    save_dir: async function (name, files) {
+        let dest = out_path || name;
+        await fs.mkdir(dest, { recursive: true });
+        for (let f of files) {
+            let full = path.join(dest, f.name);
+            await ensure_parent_dir(full);
+            let content = f.content;
+            if (typeof content === 'string' || Buffer.isBuffer(content)) {
+                await fs.writeFile(full, content, { mode: 0o644 });
+            }
+            else if (content && typeof content.arrayBuffer === 'function') {
+                let buf = Buffer.from(await content.arrayBuffer());
+                await fs.writeFile(full, buf, { mode: 0o644 });
+            }
+            else {
+                await fs.writeFile(full, Buffer.from(content), { mode: 0o644 });
+            }
+        }
+        if (!quiet) {
+            console.error(`\nWrote directory ${dest} (${files.length} files)`);
         }
     },
     get_url: async function (url, image = false) {
@@ -158,6 +198,19 @@ let funcs = {
     }
 };
 
+function common_options(y) {
+    return y
+        .option('delay', {
+            type: 'number',
+            default: 0.5,
+            describe: 'Seconds to wait between API requests'
+        })
+        .option('user-agent', {
+            type: 'string',
+            describe: 'HTTP User-Agent header'
+        });
+}
+
 function build_parser() {
     return require('yargs/yargs')(process.argv.slice(2))
         .scriptName('ficlivedl')
@@ -170,14 +223,26 @@ function build_parser() {
         })
         .middleware((argv) => {
             quiet = !!argv.quiet;
+            if (argv.userAgent) {
+                user_agent = argv.userAgent;
+            }
+            download_failed = false;
+            title_shown = false;
+            current_stage = null;
+            out_path = argv.out || null;
         })
         .command(
             '$0 [url]',
             'Download a story',
-            (y) => y
+            (y) => common_options(y)
                 .positional('url', {
                     describe: 'Story URL',
                     type: 'string'
+                })
+                .option('out', {
+                    alias: 'o',
+                    type: 'string',
+                    describe: 'Output path (file for epub/archive/metadata; directory for dir)'
                 })
                 .boolean('no-appendices')
                 .describe('no-appendices', "Omit appendix chapters")
@@ -189,7 +254,7 @@ function build_parser() {
                 .describe('no-writeins', "Don't include reader posts")
                 .default('writeins', true)
                 .describe('file-type', "What type of file to write")
-                .choices('file-type', ['archive', 'epub', 'metadata'])
+                .choices('file-type', ['archive', 'dir', 'epub', 'metadata'])
                 .default('file-type', 'epub'),
             async (argv) => {
                 let url = argv.url || (argv._ && argv._[0]);
@@ -202,15 +267,24 @@ function build_parser() {
                     download_special: argv.appendices,
                     download_type: argv.fileType,
                     download_images: argv.images,
-                    reader_posts: argv.writeins
+                    reader_posts: argv.writeins,
+                    download_delay: argv.delay
                 };
-                await ficlivedl.downloadStory(opts, funcs);
+                try {
+                    await ficlivedl.downloadStory(opts, funcs);
+                }
+                catch (e) {
+                    download_failed = true;
+                }
+                if (download_failed) {
+                    process.exit(1);
+                }
             }
         )
         .command(
             'list-stories',
             'List stories from the /stories board as JSON',
-            (y) => y
+            (y) => common_options(y)
                 .option('out', {
                     alias: 'o',
                     describe: 'Output JSON file (default: stdout)',
@@ -236,14 +310,22 @@ function build_parser() {
                     default: 'stories'
                 }),
             async (argv) => {
-                let result = await ficlivedl.listStories({
-                    board: argv.board,
-                    start_page: argv.startPage,
-                    end_page: argv.endPage,
-                    sort: argv.sort
-                }, funcs);
+                let result;
+                try {
+                    result = await ficlivedl.listStories({
+                        board: argv.board,
+                        start_page: argv.startPage,
+                        end_page: argv.endPage,
+                        sort: argv.sort,
+                        download_delay: argv.delay
+                    }, funcs);
+                }
+                catch (e) {
+                    process.exit(1);
+                }
                 let text = JSON.stringify(result, null, 2);
                 if (argv.out) {
+                    await ensure_parent_dir(argv.out);
                     await fs.writeFile(argv.out, text, { mode: 0o644 });
                     if (!quiet) {
                         console.error(`\nWrote ${argv.out} (${result.story_count} stories)`);

@@ -3,3 +3,8 @@ node_modules/
 web-ext-artifacts/
 webextension-brave/
 data/
+archive/catalog.sqlite
+archive/archive.toml
+archive/stories/
+archive/runs/
+archive/snapshots/

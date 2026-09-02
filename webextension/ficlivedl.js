@@ -381,7 +381,7 @@ function Story(opts, funcs) {
 
     return {
         node_id: get_node_id(opts.url),
-        download_delay: 0.5,
+        download_delay: (opts.download_delay != null) ? opts.download_delay : 0.5,
         node_metadata: null,
         chat_archive: null,
         topics_archive: null,
@@ -395,6 +395,9 @@ function Story(opts, funcs) {
             let url = this.node_url();
             signal_state({ 'stage': 'Getting metadata' });
             return get_url(url).then((data) => {
+                if (!data || typeof data !== 'object' || !data._id) {
+                    throw new Error('Story node not found or empty response');
+                }
                 this.node_metadata = data;
                 if (opts.download_type !== 'metadata') {
                     this.set_chapter_urls();
@@ -828,6 +831,62 @@ ${desc}
             }
             return funcs.save_file(fn, new Blob([content], { type: 'application/json' }));
         },
+        build_archive_files: function () {
+            let chapter_html = [ { 'name': 'Title page', content: this.make_title_page() } ];
+            for (let c of this.chapters) {
+                chapter_html.push({
+                    name: process_chapter_title(c.metadata.title),
+                    content: c.html
+                });
+            }
+            let chapter_data = this.chapters.map(c => { return { metadata: c.metadata, data: c.data }; });
+            let files = [
+                {
+                    name: 'metadata.json',
+                    content: JSON.stringify(this.node_metadata)
+                },
+                {
+                    name: 'chapters.json',
+                    content: JSON.stringify(chapter_data)
+                },
+            ];
+            for (let c of chapter_html) {
+                files.push({
+                    name: `chapters/${to_filename(c.name)}.html`,
+                    content: c.content
+                });
+            }
+
+            this.push_chat_files(files, 'chat', this.chat_archive);
+
+            if (this.topics_archive) {
+                files.push({
+                    name: 'topics/index.json',
+                    content: JSON.stringify({
+                        count: this.topics_archive.count,
+                        index: this.topics_archive.index
+                    })
+                });
+                for (let t of this.topics_archive.topics || []) {
+                    let base = `topics/${t.id}`;
+                    files.push({
+                        name: `${base}/node.json`,
+                        content: JSON.stringify(t.node)
+                    });
+                    this.push_chat_files(files, base, t.chat);
+                }
+            }
+
+            let images = 'story_images' in this ? this.story_images : [];
+            for (let i of images) {
+                files.push({
+                    name: `images/${i.name}`,
+                    content: i.content
+                });
+            }
+            files.push(this.cover);
+            return files;
+        },
         generate_epub: async function () {
             signal_state({
                 'title': this.title(),
@@ -933,59 +992,7 @@ img {
                 'title': this.title(),
                 'stage': 'Generating archive',
             });
-            let chapter_html = [ { 'name': 'Title page', content: this.make_title_page() } ];
-            for (let c of this.chapters) {
-                chapter_html.push({
-                    name: process_chapter_title(c.metadata.title),
-                    content: c.html
-                });
-            }
-            let chapter_data = this.chapters.map(c => { return { metadata: c.metadata, data: c.data }; });
-            let files = [
-                {
-                    name: 'metadata.json',
-                    content: JSON.stringify(this.node_metadata)
-                },
-                {
-                    name: 'chapters.json',
-                    content: JSON.stringify(chapter_data)
-                },
-            ];
-            for (let c of chapter_html) {
-                files.push({
-                    name: `chapters/${to_filename(c.name)}.html`,
-                    content: c.content
-                });
-            }
-
-            this.push_chat_files(files, 'chat', this.chat_archive);
-
-            if (this.topics_archive) {
-                files.push({
-                    name: 'topics/index.json',
-                    content: JSON.stringify({
-                        count: this.topics_archive.count,
-                        index: this.topics_archive.index
-                    })
-                });
-                for (let t of this.topics_archive.topics || []) {
-                    let base = `topics/${t.id}`;
-                    files.push({
-                        name: `${base}/node.json`,
-                        content: JSON.stringify(t.node)
-                    });
-                    this.push_chat_files(files, base, t.chat);
-                }
-            }
-
-            let images = 'story_images' in this ? this.story_images : [];
-            for (let i of images) {
-                files.push({
-                    name: `images/${i.name}`,
-                    content: i.content
-                });
-            }
-            files.push(this.cover);
+            let files = this.build_archive_files();
             let zip = new JSZip();
             for (let f of files) {
                 let zopts = {};
@@ -1012,6 +1019,18 @@ img {
 
             let fn = to_filename(this.title()) + '.zip';
             return funcs.save_file(fn, blob);
+        },
+        generate_archive_dir: async function () {
+            signal_state({
+                'title': this.title(),
+                'stage': 'Writing archive directory',
+            });
+            let files = this.build_archive_files();
+            let dirname = to_filename(this.title());
+            if (!funcs.save_dir) {
+                throw new Error('Directory archive requires funcs.save_dir');
+            }
+            return funcs.save_dir(dirname, files);
         }
     };
 }
@@ -1022,21 +1041,23 @@ options accepted:
 {
     url,
     download_special, // whether to include appendices
-    download_type, // file type to download: epub | archive | metadata | none
+    download_type, // file type to download: epub | archive | dir | metadata | none
     download_images, // whether to include images
-    reader_posts // whether to include write-ins
+    reader_posts, // whether to include write-ins
+    download_delay // seconds between API requests (default 0.5)
 }
 
 funcs members:
 - signal_state: used to set the current state of the download, for display to the user
 - save_file: used to save the final file
+- save_dir: (optional) write archive file list to a directory (Node CLI)
 - get_url: used to download from URLs (GET)
 - post_url: used to POST form-encoded data and parse JSON
 - wait: delay helper
 */
 async function downloadStory(opts, funcs) {
-    // Full archive always includes appendices and reader posts.
-    if (opts.download_type === 'archive') {
+    // Full archive (zip or dir) always includes appendices and reader posts.
+    if (opts.download_type === 'archive' || opts.download_type === 'dir') {
         opts = Object.assign({}, opts, {
             download_special: true,
             reader_posts: true
@@ -1055,7 +1076,7 @@ async function downloadStory(opts, funcs) {
 
         await story.download_chapters();
 
-        if (opts.download_type === 'archive') {
+        if (opts.download_type === 'archive' || opts.download_type === 'dir') {
             await story.download_chat();
             await story.download_topics();
             story.collect_extra_images();
@@ -1077,12 +1098,16 @@ async function downloadStory(opts, funcs) {
         else if (opts.download_type === 'archive') {
             await story.generate_archive();
         }
+        else if (opts.download_type === 'dir') {
+            await story.generate_archive_dir();
+        }
 
         funcs.signal_state(null);
     }
     catch (e) {
         console.error(e);
         funcs.signal_state({ 'error': e && e.message ? e.message : String(e) });
+        throw e;
     }
 }
 
@@ -1183,7 +1208,9 @@ async function listStories(opts, funcs) {
     }
     catch (e) {
         console.error(e);
-        funcs.signal_state({ 'error': e && e.message ? e.message : String(e) });
+        funcs.signal_state({
+            'error': e && e.message ? e.message : String(e)
+        });
         throw e;
     }
 }
