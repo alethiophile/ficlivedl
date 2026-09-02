@@ -11,7 +11,6 @@ let JSZip = require('jszip');
 
 const CHAT_POSTS_PER_PAGE = 30;
 const TOPIC_PAGE_SIZE = 30;
-const CHAT_CHUNK_SIZE = CHAT_POSTS_PER_PAGE * 1000;
 const API_BASE = 'https://fiction.live';
 
 function is_node() {
@@ -192,14 +191,6 @@ function collect_images_from_nodes(nodes, into_set) {
     for (let n of nodes) {
         collect_images_from_node(n, into_set);
     }
-}
-
-function chunk_array(arr, size) {
-    let out = [];
-    for (let i = 0; i < arr.length; i += size) {
-        out.push(arr.slice(i, i + size));
-    }
-    return out;
 }
 
 function dedupe_by_id(items) {
@@ -517,9 +508,15 @@ function Story(opts, funcs) {
             return;
         },
         // Download full chat history for a room id (story or topic).
-        // Returns { messages, replies, count, pages }.
+        // Main chat/page already includes reply-to links (ra) and chapter
+        // anchors (r); no per-message light/page fetches.
+        // Returns { messages, count, pages, message_count }.
         download_chat_room: async function (room_id, stage_label, title) {
             let delay = this.download_delay;
+            // signal_state({
+            //     'title': title,
+            //     'stage': stage_label
+            // });
             let latest = await fetch_with_retry(
                 () => get_url(`${API_BASE}/api/chat/${room_id}/latest`),
                 delay
@@ -527,9 +524,9 @@ function Story(opts, funcs) {
             if (!Array.isArray(latest) || latest.length === 0) {
                 return {
                     messages: [],
-                    replies: {},
                     count: 0,
-                    pages: 0
+                    pages: 0,
+                    message_count: 0
                 };
             }
 
@@ -593,78 +590,22 @@ function Story(opts, funcs) {
             chat = dedupe_by_id(chat);
             chat.sort((a, b) => (a.ct || 0) - (b.ct || 0));
 
-            // Expand reply threads for messages that advertise replies.
-            let replies = {};
-            let reply_targets = chat.filter(m => m && m._id && (m.p > 0));
-            let reply_done = 0;
-            for (let msg of reply_targets) {
-                signal_state({
-                    'title': title,
-                    'stage': stage_label + ' (replies)',
-                    'done': reply_done,
-                    'total': reply_targets.length
-                });
-                let all_replies = [];
-                let page = 1;
-                // light/page returns batches; keep requesting while we get a full page
-                // or until we have at least m.p items.
-                while (true) {
-                    let batch;
-                    try {
-                        batch = await fetch_with_retry(
-                            () => post_url(`${API_BASE}/api/chat/light/page`, {
-                                page: page,
-                                r: msg._id
-                            }),
-                            delay
-                        );
-                    }
-                    catch (e) {
-                        all_replies.push({
-                            failedToRetrieveChatPage: true,
-                            pageIndex: page,
-                            parent: msg._id,
-                            error: e && e.message ? e.message : String(e)
-                        });
-                        break;
-                    }
-                    if (!Array.isArray(batch) || batch.length === 0) {
-                        break;
-                    }
-                    all_replies.push(...batch);
-                    if (batch.length < CHAT_POSTS_PER_PAGE) {
-                        break;
-                    }
-                    // Enough replies collected relative to advertised count
-                    let real = all_replies.filter(x => x && x._id);
-                    if (msg.p && real.length >= msg.p) {
-                        break;
-                    }
-                    page += 1;
-                    await funcs.wait(delay);
-                }
-                if (all_replies.length) {
-                    replies[msg._id] = dedupe_by_id(all_replies);
-                }
-                reply_done += 1;
-                await funcs.wait(delay);
-            }
+            signal_state({
+                'title': title,
+                'stage': stage_label,
+                'done': final_page,
+                'total': final_page
+            });
 
             return {
                 messages: chat,
-                replies: replies,
                 count: total_posts,
-                pages: final_page
+                pages: final_page,
+                message_count: chat.filter(m => m && m._id).length
             };
         },
         download_chat: async function () {
             let title = this.title();
-            signal_state({
-                'title': title,
-                'stage': 'Fetching chat',
-                'done': 0,
-                'total': 1
-            });
             this.chat_archive = await this.download_chat_room(
                 this.node_id,
                 'Fetching chat',
@@ -678,9 +619,7 @@ function Story(opts, funcs) {
 
             signal_state({
                 'title': title,
-                'stage': 'Fetching topics',
-                'done': 0,
-                'total': 1
+                'stage': 'Fetching topics'
             });
 
             let pages_info = await fetch_with_retry(
@@ -766,9 +705,6 @@ function Story(opts, funcs) {
             let urls = new Set();
             if (this.chat_archive) {
                 collect_images_from_nodes(this.chat_archive.messages, urls);
-                for (let id of Object.keys(this.chat_archive.replies || {})) {
-                    collect_images_from_nodes(this.chat_archive.replies[id], urls);
-                }
             }
             if (this.topics_archive) {
                 for (let t of this.topics_archive.topics || []) {
@@ -776,9 +712,6 @@ function Story(opts, funcs) {
                     collect_images_from_node(t.list_entry, urls);
                     if (t.chat) {
                         collect_images_from_nodes(t.chat.messages, urls);
-                        for (let id of Object.keys(t.chat.replies || {})) {
-                            collect_images_from_nodes(t.chat.replies[id], urls);
-                        }
                     }
                 }
             }
@@ -983,33 +916,17 @@ img {
                 return;
             }
             let messages = chat.messages || [];
-            let chunks = chunk_array(messages, CHAT_CHUNK_SIZE);
-            if (chunks.length === 0) {
-                chunks = [[]];
-            }
             files.push({
-                name: `${prefix}/manifest.json`,
+                name: `${prefix}/chat.json`,
                 content: JSON.stringify({
                     count: chat.count,
                     pages: chat.pages,
-                    message_count: messages.length,
-                    chunk_size: CHAT_CHUNK_SIZE,
-                    chunks: chunks.length,
-                    reply_threads: Object.keys(chat.replies || {}).length
-                }, null, 2)
+                    message_count: chat.message_count != null
+                        ? chat.message_count
+                        : messages.filter(m => m && m._id).length,
+                    messages: messages
+                })
             });
-            for (let i = 0; i < chunks.length; i++) {
-                files.push({
-                    name: `${prefix}/chat.${i}.json`,
-                    content: JSON.stringify(chunks[i])
-                });
-            }
-            for (let id of Object.keys(chat.replies || {})) {
-                files.push({
-                    name: `${prefix}/replies/${id}.json`,
-                    content: JSON.stringify(chat.replies[id])
-                });
-            }
         },
         generate_archive: async function () {
             signal_state({

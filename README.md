@@ -53,19 +53,20 @@ chapters.json
 chapters/*.html
 images/*
 cover...
-chat/manifest.json
-chat/chat.N.json
-chat/replies/{messageId}.json
+chat/chat.json
 topics/index.json
 topics/{topicId}/node.json
-topics/{topicId}/manifest.json
-topics/{topicId}/chat.N.json
-topics/{topicId}/replies/{messageId}.json
+topics/{topicId}/chat.json
 ```
 
-Chat and topic bodies are raw API JSON. Images referenced in chapter,
-chat, and topic HTML/`i` fields are downloaded into `images/` when
-images are enabled (avatars are not).
+`chat/chat.json` is one object with `count`, `pages`, `message_count`,
+and chronological `messages` from the main story chat API. Reply-to
+links (`ra`) and chapter anchors (`r`) are already on each message; no
+separate replies tree is stored. Topic rooms use the same shape under
+`topics/{id}/chat.json`.
+
+Images referenced in chapter, chat, and topic HTML/`i` fields are
+downloaded into `images/` when images are enabled (avatars are not).
 
 ## WebExtension
 
