@@ -31,9 +31,114 @@ else {
 }
 
 function url_basename(url) {
-    let u = new URL(url);
-    let basename = u.pathname.split('/').at(-1);
-    return basename;
+    try {
+        let u = new URL(url);
+        let basename = u.pathname.split('/').filter(Boolean).at(-1);
+        return basename || '';
+    }
+    catch (e) {
+        return '';
+    }
+}
+
+function split_basename(basename) {
+    let bn = basename || 'image';
+    // strip query-like junk if any slipped through
+    bn = bn.split('?')[0].split('#')[0];
+    bn = bn.replace(/[/\\]/g, '_');
+    if (!bn || bn === '.' || bn === '..') {
+        bn = 'image';
+    }
+    let m = bn.match(/^(.*?)(\.[A-Za-z0-9]{1,8})?$/);
+    let root = (m && m[1]) ? m[1] : bn;
+    let ext = (m && m[2]) ? m[2] : '';
+    if (!root) {
+        root = 'image';
+    }
+    return { root: root, ext: ext };
+}
+
+// Per-story map: final image URL -> stable local filename.
+// Basename first; collisions with a different URL get root.2.ext, root.3.ext, …
+function ImageRegistry() {
+    let url_to_name = new Map();
+    let claimed_names = new Map(); // localName -> finalUrl
+    let cover_url = null;
+
+    function register(url) {
+        if (!url || typeof url !== 'string') {
+            return null;
+        }
+        let final_url = process_image_url(url);
+        if (!final_url) {
+            return null;
+        }
+        if (url_to_name.has(final_url)) {
+            return url_to_name.get(final_url);
+        }
+        let base = url_basename(final_url) || 'image';
+        let { root, ext } = split_basename(base);
+        let n = 1;
+        let name;
+        for (;;) {
+            name = (n === 1) ? (root + ext) : (root + '.' + n + ext);
+            let owner = claimed_names.get(name);
+            if (owner === undefined || owner === final_url) {
+                break;
+            }
+            n = n + 1;
+        }
+        claimed_names.set(name, final_url);
+        url_to_name.set(final_url, name);
+        return name;
+    }
+
+    function register_cover(url) {
+        let name = register(url);
+        if (name) {
+            cover_url = process_image_url(url);
+        }
+        return name;
+    }
+
+    function entries() {
+        let out = [];
+        for (let [url, name] of url_to_name) {
+            out.push({ url: url, name: name });
+        }
+        return out;
+    }
+
+    function to_json() {
+        let obj = {
+            scraped_at: new Date().toISOString(),
+            images: entries()
+        };
+        if (cover_url && url_to_name.has(cover_url)) {
+            obj.cover = {
+                url: cover_url,
+                name: url_to_name.get(cover_url)
+            };
+        }
+        return obj;
+    }
+
+    return {
+        register: register,
+        register_cover: register_cover,
+        entries: entries,
+        to_json: to_json,
+        get_name: function (url) {
+            let final_url = process_image_url(url);
+            return url_to_name.get(final_url) || null;
+        },
+        get cover_url() {
+            return cover_url;
+        },
+        get size() {
+            return url_to_name.size;
+        }
+    };
 }
 
 function to_filename(str) {
@@ -219,6 +324,7 @@ function Story(opts, funcs) {
     let signal_state = funcs.signal_state;
     let get_url = funcs.get_url;
     let post_url = funcs.post_url;
+    let image_registry = ImageRegistry();
     function chapter_url(story_id, start, end) {
         return `${API_BASE}/api/anonkun/chapters/${story_id}/${start}/${end}`;
     }
@@ -260,15 +366,23 @@ function Story(opts, funcs) {
                     if (src === undefined) {
                         return;
                     }
-                    images.push(src);
-                    $this.attr('src', '../images/' + url_basename(src));
+                    let name = image_registry.register(src);
+                    if (!name) {
+                        return;
+                    }
+                    let final_url = process_image_url(src);
+                    images.push(final_url);
+                    $this.attr('src', '../images/' + name);
                 });
                 if (opts.download_images) {
                     $dom.find('figure').find('img').unwrap();
                     $dom.find('img').wrap(`<div class="imgwrap"></div>`);
                 } else {
-                    // if no images, then all these elements are just removed
+                    // Strip images from rendered HTML (ePub and archive
+                    // chapter HTML). Original placement remains in
+                    // chapters.json; images.json holds url↔name for fill-in.
                     $dom.find('figure').remove();
+                    $dom.find('img').remove();
                 }
                 html = $dom.prop('outerHTML');
 
@@ -385,7 +499,8 @@ function Story(opts, funcs) {
         node_metadata: null,
         chat_archive: null,
         topics_archive: null,
-        extra_image_urls: [],
+        image_registry: image_registry,
+        cover_name: null,
         // This method returns this story's node URL in the API
         node_url: function () {
             return `${API_BASE}/api/node/${this.node_id}`;
@@ -718,7 +833,17 @@ function Story(opts, funcs) {
                     }
                 }
             }
-            this.extra_image_urls = [...urls];
+            for (let u of urls) {
+                this.image_registry.register(u);
+            }
+            if (this.node_metadata && this.node_metadata.i && this.node_metadata.i[0]) {
+                this.image_registry.register_cover(this.node_metadata.i[0]);
+            }
+        },
+        ensure_cover_registered: function () {
+            if (this.node_metadata && this.node_metadata.i && this.node_metadata.i[0]) {
+                this.cover_name = this.image_registry.register_cover(this.node_metadata.i[0]);
+            }
         },
         download_images: async function () {
             // This function relies on all the images being under domains that
@@ -727,31 +852,25 @@ function Story(opts, funcs) {
             // *.fiction.live. However, this has been different in the past, so
             // if the image hosting changes again then the extension may break.
             this.story_images = [];
-            let image_urls = new Set();
-            for (let c of this.chapters || []) {
-                let il = 'images' in c ? c.images : [];
-                for (let i of il) {
-                    let u = process_image_url(i);
-                    image_urls.add(u);
-                }
-            }
-            for (let u of this.extra_image_urls || []) {
-                image_urls.add(u);
-            }
-            this.total_story_images = image_urls.size;
+            let entries = this.image_registry.entries();
+            // Cover is fetched in download_cover; skip duplicate binary fetch
+            // here when it will be stored as the root cover file only for ePub
+            // path — for archive we also put cover under images/ via story_images
+            // if it's in the registry. Always download all registry entries.
+            this.total_story_images = entries.length;
             let num_downloaded = 0;
-            all_images: for (let i of image_urls) {
+            all_images: for (let entry of entries) {
                 signal_state({
                     'title': this.title(),
                     'stage': 'Fetching images',
                     'done': num_downloaded,
-                    'total': image_urls.size + 1
+                    'total': entries.length + 1
                 });
                 let tries = 3;
                 let data;
                 while (tries > 0) {
                     try {
-                        data = await get_url(i, true);
+                        data = await get_url(entry.url, true);
                     }
                     catch (e) {
                         console.log(e, tries);
@@ -767,34 +886,52 @@ function Story(opts, funcs) {
                 }
                 num_downloaded += 1;
                 this.story_images.push({
-                    name: url_basename(i),
-                    content: data
+                    name: entry.name,
+                    content: data,
+                    url: entry.url
                 });
             }
             return;
         },
         download_cover: async function () {
+            this.ensure_cover_registered();
+            let is_archive = opts.download_type === 'archive' || opts.download_type === 'dir';
             signal_state({
                 'title': this.title(),
                 'stage': 'Fetching images',
                 'done': this.total_story_images || 0,
                 'total': (this.total_story_images || 0) + 1
             });
-            let cover_url, cover_name;
-            if ('i' in this.node_metadata && this.node_metadata.i && this.node_metadata.i[0]) {
-                cover_url = this.node_metadata.i[0];
-                cover_name = url_basename(cover_url);
-                let u = process_image_url(cover_url);
-                try {
-                    let data = await get_url(u, true);
+
+            // Archive/dir with --no-images: skip CDN cover fetch; images.json
+            // still records the cover URL for a later fill-in.
+            if (is_archive && !opts.download_images) {
+                this.cover = null;
+                return;
+            }
+
+            if (this.cover_name && this.image_registry.cover_url) {
+                // Reuse binary if download_images already fetched this URL
+                let existing = (this.story_images || []).find(
+                    i => i.url === this.image_registry.cover_url || i.name === this.cover_name
+                );
+                if (existing && existing.content) {
                     this.cover = {
-                        name: cover_name,
+                        name: this.cover_name,
+                        content: existing.content
+                    };
+                    return;
+                }
+                try {
+                    let data = await get_url(this.image_registry.cover_url, true);
+                    this.cover = {
+                        name: this.cover_name,
                         content: data
                     };
                     return;
                 }
                 catch (e) {
-                    // fall through to embedded placeholder
+                    // fall through to embedded placeholder for ePub
                 }
             }
             // nodepub requires a cover; use embedded 1x1 PNG if missing/failed
@@ -877,6 +1014,11 @@ ${desc}
                 }
             }
 
+            files.push({
+                name: 'images.json',
+                content: JSON.stringify(this.image_registry.to_json(), null, 2)
+            });
+
             let images = 'story_images' in this ? this.story_images : [];
             for (let i of images) {
                 files.push({
@@ -884,7 +1026,10 @@ ${desc}
                     content: i.content
                 });
             }
-            files.push(this.cover);
+            // Cover binary at archive root when fetched (skipped for --no-images)
+            if (this.cover && this.cover.content) {
+                files.push(this.cover);
+            }
             return files;
         },
         generate_epub: async function () {
@@ -1081,12 +1226,17 @@ async function downloadStory(opts, funcs) {
             await story.download_topics();
             story.collect_extra_images();
         }
+        else {
+            // ePub: still register cover for naming; chapter imgs already
+            // registered during process_html.
+            story.ensure_cover_registered();
+        }
 
         if (opts.download_images) {
             await story.download_images();
         }
         else {
-            story.total_story_images = 0;
+            story.total_story_images = story.image_registry.size;
             story.story_images = [];
         }
 

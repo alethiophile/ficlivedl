@@ -63,6 +63,7 @@ Used by both `--file-type archive` (ZIP) and `--file-type dir` (directory):
 metadata.json
 chapters.json
 chapters/*.html
+images.json
 images/*
 cover...
 chat/chat.json
@@ -76,6 +77,13 @@ and chronological `messages` from the main story chat API. Reply-to
 links (`ra`) and chapter anchors (`r`) are already on each message; no
 separate replies tree is stored. Topic rooms use the same shape under
 `topics/{id}/chat.json`.
+
+`images.json` always lists discovered image URLs and local filenames.
+Names use the URL basename; colliding basenames for different URLs get
+`root.2.ext`, `root.3.ext`, …. With `--no-images`, binaries and cover are
+skipped but `images.json` is still written for a later CDN fill-in.
+Rendered `chapters/*.html` omits `<img>` when images are off; original
+placement remains in `chapters.json`.
 
 Images referenced in chapter, chat, and topic HTML/`i` fields are
 downloaded into `images/` when images are enabled (avatars are not).
