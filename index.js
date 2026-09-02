@@ -13,7 +13,8 @@ let title_shown = false;
 let bar = null;
 let quiet = false;
 let out_path = null;
-let user_agent = 'ficlivedl/0.2 (+https://github.com/alethiophile/ficlivedl)';
+// let user_agent = 'ficlivedl/0.2 (+https://github.com/alethiophile/ficlivedl)';
+let user_agent = '';
 let download_failed = false;
 
 function request_promise(url, options = {}) {
@@ -35,7 +36,7 @@ function request_promise(url, options = {}) {
 
     let u = new URL(url);
     let headers = Object.assign({}, options.headers || {});
-    if (!headers['user-agent'] && !headers['User-Agent']) {
+    if (!headers['user-agent'] && !headers['User-Agent'] && user_agent !== '') {
         headers['user-agent'] = user_agent;
     }
     let req_opts = {
