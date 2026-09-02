@@ -1,7 +1,7 @@
 {
   "name": "ficlivedl",
-  "version": "0.1.5",
-  "description": "WebExtension for downloading fiction.live stories",
+  "version": "0.2.0",
+  "description": "Downloader for fiction.live stories (CLI and WebExtension)",
   "bin": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -14,7 +14,8 @@
     "jsdom": "^21.0.0",
     "jszip": "^3.10.1",
     "nodepub": "github:alethiophile/nodepub",
-    "sanitize-html": "^2.7.0"
+    "sanitize-html": "^2.7.0",
+    "yargs": "^17.7.3"
   },
   "devDependencies": {
     "browserify": "^17.0.0",

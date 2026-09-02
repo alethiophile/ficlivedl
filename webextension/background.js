@@ -5,13 +5,13 @@ let ficlivedl = require('./ficlivedl');
 
 /* A download state describes the current download status for purposes
    of progress display in the popup. It may be either null (signaling
-   no download in progress), or an object as follows: 
+   no download in progress), or an object as follows:
 
    {
      title: story title as string
-     stage: either 'chapters' or 'images', as appropriate
-     done: number of chapters/images already downloaded
-     total: number of chapters/images overall
+     stage: stage name string
+     done: number already downloaded
+     total: number overall
    }
 */
 let downloadState = null;
@@ -57,6 +57,14 @@ let funcs = {
         return $.ajax({
             url: url,
             xhrFields: xhrFields
+        });
+    },
+    post_url: async function (url, fields) {
+        return $.ajax({
+            url: url,
+            method: 'POST',
+            data: fields || {},
+            // jQuery encodes as application/x-www-form-urlencoded by default
         });
     },
     wait: async function (seconds) {

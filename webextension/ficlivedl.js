@@ -9,6 +9,11 @@ let nodepub = require('nodepub');
 let sanitizeHtml = require('sanitize-html');
 let JSZip = require('jszip');
 
+const CHAT_POSTS_PER_PAGE = 30;
+const TOPIC_PAGE_SIZE = 30;
+const CHAT_CHUNK_SIZE = CHAT_POSTS_PER_PAGE * 1000;
+const API_BASE = 'https://fiction.live';
+
 function is_node() {
     return (typeof process !== 'undefined') &&
         (typeof process.release !== 'undefined') &&
@@ -34,6 +39,21 @@ function url_basename(url) {
 
 function to_filename(str) {
     return str.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]+/g, '');
+}
+
+function slugify_title(str) {
+    if (!str) {
+        return 'story';
+    }
+    return String(str)
+        .replace(/['’]/g, '')
+        .replace(/[^A-Za-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .replace(/-+/g, '-') || 'story';
+}
+
+function story_page_url(title, id) {
+    return `${API_BASE}/stories/${slugify_title(title)}/${id}`;
 }
 
 function count_words(html) {
@@ -95,11 +115,121 @@ function placeholder_cover_blob() {
     return new Blob([arr], { type: 'image/png' });
 }
 
+function encode_form(fields) {
+    let parts = [];
+    for (let key of Object.keys(fields)) {
+        let val = fields[key];
+        if (val === undefined || val === null) {
+            continue;
+        }
+        if (Array.isArray(val)) {
+            for (let item of val) {
+                parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(item));
+            }
+        }
+        else if (typeof val === 'boolean') {
+            parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(val ? 'true' : 'false'));
+        }
+        else {
+            parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(String(val)));
+        }
+    }
+    return parts.join('&');
+}
+
+function add_image_url(into_set, url) {
+    if (!url || typeof url !== 'string') {
+        return;
+    }
+    let u = process_image_url(url);
+    if (u) {
+        into_set.add(u);
+    }
+}
+
+function collect_images_from_html(html, into_set) {
+    if (!html || typeof html !== 'string' || html.indexOf('<img') === -1) {
+        return;
+    }
+    let $dom = $(`<div>${html}</div>`);
+    $dom.find('img').each(function () {
+        let src = $(this).attr('src');
+        add_image_url(into_set, src);
+    });
+}
+
+function collect_images_from_node(node, into_set) {
+    if (!node || typeof node !== 'object') {
+        return;
+    }
+    if (typeof node.b === 'string') {
+        collect_images_from_html(node.b, into_set);
+    }
+    if (node.i) {
+        if (Array.isArray(node.i)) {
+            for (let u of node.i) {
+                add_image_url(into_set, u);
+            }
+        }
+        else if (typeof node.i === 'string') {
+            add_image_url(into_set, node.i);
+        }
+    }
+    if (node.lr) {
+        collect_images_from_node(node.lr, into_set);
+    }
+    if (node.ra && typeof node.ra === 'object') {
+        if (typeof node.ra.b === 'string') {
+            collect_images_from_html(node.ra.b, into_set);
+        }
+    }
+}
+
+function collect_images_from_nodes(nodes, into_set) {
+    if (!nodes) {
+        return;
+    }
+    for (let n of nodes) {
+        collect_images_from_node(n, into_set);
+    }
+}
+
+function chunk_array(arr, size) {
+    let out = [];
+    for (let i = 0; i < arr.length; i += size) {
+        out.push(arr.slice(i, i + size));
+    }
+    return out;
+}
+
+function dedupe_by_id(items) {
+    let seen = new Set();
+    let out = [];
+    for (let item of items) {
+        if (!item || typeof item !== 'object') {
+            out.push(item);
+            continue;
+        }
+        let id = item._id;
+        if (!id) {
+            out.push(item);
+            continue;
+        }
+        if (seen.has(id)) {
+            continue;
+        }
+        seen.add(id);
+        out.push(item);
+    }
+    return out;
+}
+
 function Story(opts, funcs) {
     let signal_state = funcs.signal_state;
     let get_url = funcs.get_url;
+    let post_url = funcs.post_url;
     function chapter_url(story_id, start, end) {
-        return `https://fiction.live/api/anonkun/chapters/${story_id}/${start}/${end}`;
+        return `${API_BASE}/api/anonkun/chapters/${story_id}/${start}/${end}`;
     }
 
     function sanitize_chapter_html(html) {
@@ -242,13 +372,32 @@ function Story(opts, funcs) {
         }).format(d);
     }
 
+    async function fetch_with_retry(do_fetch, delay) {
+        let tries = 3;
+        while (tries > 0) {
+            try {
+                return await do_fetch();
+            }
+            catch (e) {
+                tries -= 1;
+                if (tries <= 0) {
+                    throw e;
+                }
+                await funcs.wait(delay * 4);
+            }
+        }
+    }
+
     return {
         node_id: get_node_id(opts.url),
         download_delay: 0.5,
         node_metadata: null,
+        chat_archive: null,
+        topics_archive: null,
+        extra_image_urls: [],
         // This method returns this story's node URL in the API
         node_url: function () {
-            return `https://fiction.live/api/node/${this.node_id}`;
+            return `${API_BASE}/api/node/${this.node_id}`;
         },
         // This method downloads the node info, returning a promise
         download_node: function () {
@@ -256,14 +405,19 @@ function Story(opts, funcs) {
             signal_state({ 'stage': 'Getting metadata' });
             return get_url(url).then((data) => {
                 this.node_metadata = data;
-                this.set_chapter_urls();
+                if (opts.download_type !== 'metadata') {
+                    this.set_chapter_urls();
+                }
                 return data;
             });
         },
         story_url: function () {
             let re = /^https:\/\/fiction.live\/stories\/[^/]+\/[^/]+\/?/;
             let match = opts.url.match(re);
-            return match[0];
+            if (match) {
+                return match[0];
+            }
+            return story_page_url(this.title(), this.node_id);
         },
         title: function () {
             return this.node_metadata.t;
@@ -272,10 +426,12 @@ function Story(opts, funcs) {
             return this.node_metadata.u[0].n;
         },
         tags: function () {
-            return [...new Set(this.node_metadata.ta.concat(this.node_metadata.spoilerTags))];
+            let ta = this.node_metadata.ta || [];
+            let spoiler = this.node_metadata.spoilerTags || [];
+            return [...new Set(ta.concat(spoiler))];
         },
         words: function () {
-            return this.chapters.map(c => c.words).reduce((a, b) => a + b);
+            return this.chapters.map(c => c.words).reduce((a, b) => a + b, 0);
         },
         date_published: function () {
             return new Date(this.node_metadata.ct);
@@ -291,12 +447,28 @@ function Story(opts, funcs) {
             // this must be a string because it's too big for the JS
             // numeric type
             let final_number = '9999999999999998';
-            let num_chapters = this.node_metadata.bm.length;
+            let bm = this.node_metadata.bm || [];
+            let num_chapters = bm.length;
+            // Stories with no bookmarks still have chapter content; fetch the
+            // full range as a single synthetic chapter.
+            if (num_chapters === 0) {
+                chapters.push({
+                    metadata: {
+                        title: this.node_metadata.t || 'Story',
+                        id: this.node_id,
+                        ct: this.node_metadata.ct || 0
+                    },
+                    special: false,
+                    url: chapter_url(this.node_id, 0, final_number)
+                });
+                this.chapters = chapters;
+                return true;
+            }
             let first = 1;
             // what is even up with this overly complicated URL algo
             for (let i = 0; i < num_chapters; i++) {
                 let item = {};
-                item.metadata = this.node_metadata.bm[i];
+                item.metadata = bm[i];
                 let start = item.metadata.ct;
                 if (first) {
                     start = 0;
@@ -307,11 +479,11 @@ function Story(opts, funcs) {
                 if (item.special) {
                     end = start + 1;
                 }
-                else if (i + 1 >= num_chapters || this.node_metadata.bm[i + 1].title.startsWith('#special')) {
+                else if (i + 1 >= num_chapters || bm[i + 1].title.startsWith('#special')) {
                     end = final_number;
                 }
                 else {
-                    end = this.node_metadata.bm[i + 1].ct - 1;
+                    end = bm[i + 1].ct - 1;
                 }
                 item.url = chapter_url(this.node_id, start, end);
                 chapters.push(item);
@@ -334,33 +506,283 @@ function Story(opts, funcs) {
                     'total': total_to_download
                 });
                 let u = c.url;
-                let tries = 3;
-                let data;
-                while (tries > 0) {
-                    try {
-                        data = await get_url(u);
-                    } catch (e) {
-                        // any fetch error is typically a 400 that seems to be a
-                        // "server overloaded" or similar back-off message; wait
-                        // 4x the typical delay, then try again
-                        tries -= 1;
-                        if (tries <= 0) {
-                            throw e;
-                        }
-                        await funcs.wait(this.download_delay * 4)
-                        continue;
-                    }
-                    break;
-                }
+                let data = await fetch_with_retry(() => get_url(u), this.download_delay);
                 let wait_until = Date.now() + this.download_delay * 1000;
                 c.data = data;
                 num_downloaded += 1;
                 process_html(c);
-                // console.log(`chapter ${num_downloaded}`, c.images);
                 let wait_time = Math.max(wait_until - Date.now(), 0);
                 await funcs.wait(wait_time / 1000)
             }
             return;
+        },
+        // Download full chat history for a room id (story or topic).
+        // Returns { messages, replies, count, pages }.
+        download_chat_room: async function (room_id, stage_label, title) {
+            let delay = this.download_delay;
+            let latest = await fetch_with_retry(
+                () => get_url(`${API_BASE}/api/chat/${room_id}/latest`),
+                delay
+            );
+            if (!Array.isArray(latest) || latest.length === 0) {
+                return {
+                    messages: [],
+                    replies: {},
+                    count: 0,
+                    pages: 0
+                };
+            }
+
+            let pages_info = await fetch_with_retry(
+                () => post_url(`${API_BASE}/api/chat/pages`, { r: room_id }),
+                delay
+            );
+            let total_posts = (pages_info && pages_info.count) ? pages_info.count : latest.length;
+            let final_page = Math.max(1, Math.ceil(total_posts / CHAT_POSTS_PER_PAGE));
+
+            // Seed CT window from latest (site pager does this when leaving live view).
+            let sorted_latest = latest.slice().sort((a, b) => (a.ct || 0) - (b.ct || 0));
+            let page_post_data = {
+                r: room_id,
+                lastCT: sorted_latest[sorted_latest.length - 1].ct,
+                firstCT: sorted_latest[0].ct,
+                cpr: final_page
+            };
+
+            let chat = [];
+            for (let page_index = 1; page_index <= final_page; page_index++) {
+                signal_state({
+                    'title': title,
+                    'stage': stage_label,
+                    'done': page_index - 1,
+                    'total': final_page
+                });
+                page_post_data.page = page_index;
+                let posts;
+                try {
+                    posts = await fetch_with_retry(
+                        () => post_url(`${API_BASE}/api/chat/page`, page_post_data),
+                        delay
+                    );
+                }
+                catch (e) {
+                    chat.push({
+                        failedToRetrieveChatPage: true,
+                        postsPerPage: CHAT_POSTS_PER_PAGE,
+                        pageIndex: page_index,
+                        error: e && e.message ? e.message : String(e)
+                    });
+                    await funcs.wait(delay);
+                    continue;
+                }
+                if (!Array.isArray(posts)) {
+                    posts = [];
+                }
+                chat.push(...posts);
+                if (posts.length) {
+                    let ordered = posts.slice().sort((a, b) => (a.ct || 0) - (b.ct || 0));
+                    page_post_data.lastCT = ordered[ordered.length - 1].ct;
+                    page_post_data.firstCT = ordered[0].ct;
+                    page_post_data.cpr = page_index;
+                }
+                await funcs.wait(delay);
+            }
+
+            // Latest window may not be fully covered by page walk; merge it in.
+            chat.push(...latest);
+            chat = dedupe_by_id(chat);
+            chat.sort((a, b) => (a.ct || 0) - (b.ct || 0));
+
+            // Expand reply threads for messages that advertise replies.
+            let replies = {};
+            let reply_targets = chat.filter(m => m && m._id && (m.p > 0));
+            let reply_done = 0;
+            for (let msg of reply_targets) {
+                signal_state({
+                    'title': title,
+                    'stage': stage_label + ' (replies)',
+                    'done': reply_done,
+                    'total': reply_targets.length
+                });
+                let all_replies = [];
+                let page = 1;
+                // light/page returns batches; keep requesting while we get a full page
+                // or until we have at least m.p items.
+                while (true) {
+                    let batch;
+                    try {
+                        batch = await fetch_with_retry(
+                            () => post_url(`${API_BASE}/api/chat/light/page`, {
+                                page: page,
+                                r: msg._id
+                            }),
+                            delay
+                        );
+                    }
+                    catch (e) {
+                        all_replies.push({
+                            failedToRetrieveChatPage: true,
+                            pageIndex: page,
+                            parent: msg._id,
+                            error: e && e.message ? e.message : String(e)
+                        });
+                        break;
+                    }
+                    if (!Array.isArray(batch) || batch.length === 0) {
+                        break;
+                    }
+                    all_replies.push(...batch);
+                    if (batch.length < CHAT_POSTS_PER_PAGE) {
+                        break;
+                    }
+                    // Enough replies collected relative to advertised count
+                    let real = all_replies.filter(x => x && x._id);
+                    if (msg.p && real.length >= msg.p) {
+                        break;
+                    }
+                    page += 1;
+                    await funcs.wait(delay);
+                }
+                if (all_replies.length) {
+                    replies[msg._id] = dedupe_by_id(all_replies);
+                }
+                reply_done += 1;
+                await funcs.wait(delay);
+            }
+
+            return {
+                messages: chat,
+                replies: replies,
+                count: total_posts,
+                pages: final_page
+            };
+        },
+        download_chat: async function () {
+            let title = this.title();
+            signal_state({
+                'title': title,
+                'stage': 'Fetching chat',
+                'done': 0,
+                'total': 1
+            });
+            this.chat_archive = await this.download_chat_room(
+                this.node_id,
+                'Fetching chat',
+                title
+            );
+        },
+        download_topics: async function () {
+            let title = this.title();
+            let delay = this.download_delay;
+            let story_id = this.node_id;
+
+            signal_state({
+                'title': title,
+                'stage': 'Fetching topics',
+                'done': 0,
+                'total': 1
+            });
+
+            let pages_info = await fetch_with_retry(
+                () => get_url(`${API_BASE}/api/thread/${story_id}/pages`),
+                delay
+            );
+            let topic_count = (pages_info && pages_info.count) ? pages_info.count : 0;
+            let page_count = Math.max(1, Math.ceil(topic_count / TOPIC_PAGE_SIZE));
+            if (topic_count === 0) {
+                page_count = 1;
+            }
+
+            let index = [];
+            for (let page = 1; page <= page_count; page++) {
+                signal_state({
+                    'title': title,
+                    'stage': 'Fetching topics',
+                    'done': page - 1,
+                    'total': page_count
+                });
+                let batch = await fetch_with_retry(
+                    () => get_url(`${API_BASE}/api/thread/${story_id}/${page}/${TOPIC_PAGE_SIZE}`),
+                    delay
+                );
+                if (!Array.isArray(batch) || batch.length === 0) {
+                    if (page === 1) {
+                        break;
+                    }
+                    break;
+                }
+                index.push(...batch);
+                if (batch.length < TOPIC_PAGE_SIZE) {
+                    break;
+                }
+                await funcs.wait(delay);
+            }
+            index = dedupe_by_id(index);
+
+            let topics = [];
+            let ti = 0;
+            for (let topic of index) {
+                ti += 1;
+                signal_state({
+                    'title': title,
+                    'stage': 'Fetching topic data',
+                    'done': ti - 1,
+                    'total': index.length
+                });
+                let topic_id = topic._id;
+                let node = topic;
+                try {
+                    node = await fetch_with_retry(
+                        () => get_url(`${API_BASE}/api/node/${topic_id}`),
+                        delay
+                    );
+                }
+                catch (e) {
+                    // keep list stub
+                }
+                await funcs.wait(delay);
+
+                let chat = await this.download_chat_room(
+                    topic_id,
+                    `Fetching topic chat (${ti}/${index.length})`,
+                    title
+                );
+
+                topics.push({
+                    id: topic_id,
+                    list_entry: topic,
+                    node: node,
+                    chat: chat
+                });
+            }
+
+            this.topics_archive = {
+                count: topic_count,
+                index: index,
+                topics: topics
+            };
+        },
+        collect_extra_images: function () {
+            let urls = new Set();
+            if (this.chat_archive) {
+                collect_images_from_nodes(this.chat_archive.messages, urls);
+                for (let id of Object.keys(this.chat_archive.replies || {})) {
+                    collect_images_from_nodes(this.chat_archive.replies[id], urls);
+                }
+            }
+            if (this.topics_archive) {
+                for (let t of this.topics_archive.topics || []) {
+                    collect_images_from_node(t.node, urls);
+                    collect_images_from_node(t.list_entry, urls);
+                    if (t.chat) {
+                        collect_images_from_nodes(t.chat.messages, urls);
+                        for (let id of Object.keys(t.chat.replies || {})) {
+                            collect_images_from_nodes(t.chat.replies[id], urls);
+                        }
+                    }
+                }
+            }
+            this.extra_image_urls = [...urls];
         },
         download_images: async function () {
             // This function relies on all the images being under domains that
@@ -370,12 +792,15 @@ function Story(opts, funcs) {
             // if the image hosting changes again then the extension may break.
             this.story_images = [];
             let image_urls = new Set();
-            for (let c of this.chapters) {
+            for (let c of this.chapters || []) {
                 let il = 'images' in c ? c.images : [];
                 for (let i of il) {
                     let u = process_image_url(i);
                     image_urls.add(u);
                 }
+            }
+            for (let u of this.extra_image_urls || []) {
+                image_urls.add(u);
             }
             this.total_story_images = image_urls.size;
             let num_downloaded = 0;
@@ -416,8 +841,8 @@ function Story(opts, funcs) {
             signal_state({
                 'title': this.title(),
                 'stage': 'Fetching images',
-                'done': this.total_story_images,
-                'total': this.total_story_images + 1
+                'done': this.total_story_images || 0,
+                'total': (this.total_story_images || 0) + 1
             });
             let cover_url, cover_name;
             if ('i' in this.node_metadata && this.node_metadata.i && this.node_metadata.i[0]) {
@@ -443,7 +868,7 @@ function Story(opts, funcs) {
             };
         },
         make_title_page: function () {
-            let desc = `<p>${this.node_metadata.d}</p><p>${this.node_metadata.b}</p>`
+            let desc = `<p>${this.node_metadata.d}</p><p>${this.node_metadata.b || ''}</p>`
             let res = `<h1>${this.title()}</h1>
 
 <h2>by ${this.author()}</h2>
@@ -457,6 +882,18 @@ function Story(opts, funcs) {
 ${desc}
 `;
             return res;
+        },
+        save_metadata_only: async function () {
+            signal_state({
+                'title': this.title(),
+                'stage': 'Saving metadata'
+            });
+            let fn = to_filename(this.title()) + '.metadata.json';
+            let content = JSON.stringify(this.node_metadata, null, 2);
+            if (is_node()) {
+                return funcs.save_file(fn, content);
+            }
+            return funcs.save_file(fn, new Blob([content], { type: 'application/json' }));
         },
         generate_epub: async function () {
             signal_state({
@@ -516,13 +953,13 @@ img {
             let zip = new JSZip();
             for (let f of files) {
                 let path = f.folder !== '' ? `${f.folder}/${f.name}` : f.name;
-                let opts = {};
+                let zopts = {};
                 // we don't bother compressing image files, they're usually
                 // already compressed by the format
                 if (!f.compress || f.folder.indexOf('images') !== -1) {
-                    opts.compression = 'STORE';
+                    zopts.compression = 'STORE';
                 }
-                zip.file(path, f.content, opts);
+                zip.file(path, f.content, zopts);
             }
             let type = is_node() ? 'nodebuffer' : 'blob';
             let blob = await zip.generateAsync({
@@ -540,6 +977,39 @@ img {
             let fn = to_filename(this.title()) + '.epub';
 
             return funcs.save_file(fn, blob);
+        },
+        push_chat_files: function (files, prefix, chat) {
+            if (!chat) {
+                return;
+            }
+            let messages = chat.messages || [];
+            let chunks = chunk_array(messages, CHAT_CHUNK_SIZE);
+            if (chunks.length === 0) {
+                chunks = [[]];
+            }
+            files.push({
+                name: `${prefix}/manifest.json`,
+                content: JSON.stringify({
+                    count: chat.count,
+                    pages: chat.pages,
+                    message_count: messages.length,
+                    chunk_size: CHAT_CHUNK_SIZE,
+                    chunks: chunks.length,
+                    reply_threads: Object.keys(chat.replies || {}).length
+                }, null, 2)
+            });
+            for (let i = 0; i < chunks.length; i++) {
+                files.push({
+                    name: `${prefix}/chat.${i}.json`,
+                    content: JSON.stringify(chunks[i])
+                });
+            }
+            for (let id of Object.keys(chat.replies || {})) {
+                files.push({
+                    name: `${prefix}/replies/${id}.json`,
+                    content: JSON.stringify(chat.replies[id])
+                });
+            }
         },
         generate_archive: async function () {
             signal_state({
@@ -570,6 +1040,27 @@ img {
                     content: c.content
                 });
             }
+
+            this.push_chat_files(files, 'chat', this.chat_archive);
+
+            if (this.topics_archive) {
+                files.push({
+                    name: 'topics/index.json',
+                    content: JSON.stringify({
+                        count: this.topics_archive.count,
+                        index: this.topics_archive.index
+                    })
+                });
+                for (let t of this.topics_archive.topics || []) {
+                    let base = `topics/${t.id}`;
+                    files.push({
+                        name: `${base}/node.json`,
+                        content: JSON.stringify(t.node)
+                    });
+                    this.push_chat_files(files, base, t.chat);
+                }
+            }
+
             let images = 'story_images' in this ? this.story_images : [];
             for (let i of images) {
                 files.push({
@@ -580,14 +1071,13 @@ img {
             files.push(this.cover);
             let zip = new JSZip();
             for (let f of files) {
-                // let path = f.folder !== '' ? `${f.folder}/${f.name}` : f.name;
-                let opts = {};
+                let zopts = {};
                 // we don't bother compressing image files, they're usually
                 // already compressed by the format
                 if (f.name.startsWith('images/')) {
-                    opts.compression = 'STORE';
+                    zopts.compression = 'STORE';
                 }
-                zip.file(f.name, f.content, opts);
+                zip.file(f.name, f.content, zopts);
             }
 
             let type = is_node() ? 'nodebuffer' : 'blob';
@@ -615,41 +1105,174 @@ options accepted:
 {
     url,
     download_special, // whether to include appendices
-    download_type, // file type to download
+    download_type, // file type to download: epub | archive | metadata | none
     download_images, // whether to include images
     reader_posts // whether to include write-ins
 }
 
-funcs has three members:
+funcs members:
 - signal_state: used to set the current state of the download, for display to the user
 - save_file: used to save the final file
-- get_url: used to download from URLs
+- get_url: used to download from URLs (GET)
+- post_url: used to POST form-encoded data and parse JSON
+- wait: delay helper
 */
-function downloadStory(opts, funcs) {
-    let story = Story(opts, funcs);
-    story.download_node().then(() => {
-        return story.download_chapters();
-    }).then(() => {
-        if (opts.download_images) {
-            return story.download_images();
-        }
-        return;
-    }).then(() => {
-        return story.download_cover();
+async function downloadStory(opts, funcs) {
+    // Full archive always includes appendices and reader posts.
+    if (opts.download_type === 'archive') {
+        opts = Object.assign({}, opts, {
+            download_special: true,
+            reader_posts: true
+        });
     }
-    ).then(() => {
-        if (opts.download_type === 'epub') {
-            return story.generate_epub();
-        } else if (opts.download_type === 'archive') {
-            return story.generate_archive();
+
+    let story = Story(opts, funcs);
+    try {
+        await story.download_node();
+
+        if (opts.download_type === 'metadata') {
+            await story.save_metadata_only();
+            funcs.signal_state(null);
+            return;
         }
-        return;
-    }).then(() => {
+
+        await story.download_chapters();
+
+        if (opts.download_type === 'archive') {
+            await story.download_chat();
+            await story.download_topics();
+            story.collect_extra_images();
+        }
+
+        if (opts.download_images) {
+            await story.download_images();
+        }
+        else {
+            story.total_story_images = 0;
+            story.story_images = [];
+        }
+
+        await story.download_cover();
+
+        if (opts.download_type === 'epub') {
+            await story.generate_epub();
+        }
+        else if (opts.download_type === 'archive') {
+            await story.generate_archive();
+        }
+
         funcs.signal_state(null);
-    }).catch((e) => {
+    }
+    catch (e) {
         console.error(e);
-        funcs.signal_state({ 'error': e.message });
-    });
+        funcs.signal_state({ 'error': e && e.message ? e.message : String(e) });
+    }
+}
+
+function build_board_query(opts) {
+    let page = opts.page || 1;
+    let sort = opts.sort || 'new';
+    let params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('sort', sort);
+    params.set('length', opts.length || 'Any');
+
+    let ratings = opts.contentRating || {
+        teen: true, mature: true, nsfw: true, unrated: true
+    };
+    for (let k of Object.keys(ratings)) {
+        if (ratings[k]) {
+            params.set(`contentRating[${k}]`, 'true');
+        }
+    }
+    let statuses = opts.storyStatus || {
+        active: true, finished: true, hiatus: true
+    };
+    for (let k of Object.keys(statuses)) {
+        if (statuses[k]) {
+            params.set(`storyStatus[${k}]`, 'true');
+        }
+    }
+    let interact = opts.rInteract || {
+        none: true, light: true, medium: true, heavy: true
+    };
+    for (let k of Object.keys(interact)) {
+        if (interact[k]) {
+            params.set(`rInteract[${k}]`, 'true');
+        }
+    }
+    return params.toString();
+}
+
+/*
+listStories options:
+{
+  board: 'stories' (default),
+  start_page: 1,
+  end_page: null (until empty),
+  sort: 'new'|'active'|'hot'|'chapter'|'replies'|'like',
+  contentRating / storyStatus / rInteract optional overrides
+}
+*/
+async function listStories(opts, funcs) {
+    let board = opts.board || 'stories';
+    let start = opts.start_page || 1;
+    let end = opts.end_page || null;
+    let sort = opts.sort || 'new';
+    let delay = opts.download_delay || 0.5;
+    let all = [];
+    let page = start;
+    let pages_fetched = 0;
+
+    try {
+        while (true) {
+            if (end !== null && page > end) {
+                break;
+            }
+            funcs.signal_state({
+                stage: `Listing stories (page ${page})`,
+                done: pages_fetched,
+                total: end ? (end - start + 1) : undefined
+            });
+            let qs = build_board_query(Object.assign({}, opts, { page, sort }));
+            let url = `${API_BASE}/api/anonkun/board/${board}?${qs}`;
+            let data = await funcs.get_url(url);
+            let stories = (data && data.stories) ? data.stories : [];
+            pages_fetched += 1;
+            if (!stories.length) {
+                break;
+            }
+            for (let s of stories) {
+                let entry = Object.assign({}, s);
+                entry.url = story_page_url(s.t, s._id);
+                all.push(entry);
+            }
+            page += 1;
+            await funcs.wait(delay);
+        }
+
+        let result = {
+            scraped_at: new Date().toISOString(),
+            board: board,
+            sort: sort,
+            start_page: start,
+            end_page: end,
+            pages_fetched: pages_fetched,
+            story_count: all.length,
+            stories: all
+        };
+        funcs.signal_state(null);
+        return result;
+    }
+    catch (e) {
+        console.error(e);
+        funcs.signal_state({ 'error': e && e.message ? e.message : String(e) });
+        throw e;
+    }
 }
 
 exports.downloadStory = downloadStory;
+exports.listStories = listStories;
+exports.encode_form = encode_form;
+exports.process_image_url = process_image_url;
+exports.story_page_url = story_page_url;
