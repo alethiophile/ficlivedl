@@ -6,5 +6,6 @@ data/
 archive/catalog.sqlite
 archive/archive.toml
 archive/stories/
+archive/blobs/
 archive/runs/
 archive/snapshots/
