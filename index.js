@@ -10,6 +10,7 @@ let https = require('https');
 let current_stage = null;
 let title_shown = false;
 let bar = null;
+let quiet = false;
 
 function request_promise(url, options = {}) {
     let method = options.method || 'GET';
@@ -104,6 +105,9 @@ let funcs = {
             console.error(state.error);
             return;
         }
+        if (quiet) {
+            return;
+        }
         if (!title_shown && state.title) {
             console.error(`Found story: ${state.title}\n`);
             title_shown = true;
@@ -130,7 +134,9 @@ let funcs = {
         await fs.writeFile(name, data, {
             mode: 0o644,
         });
-        console.error(`\nWrote ${name}`);
+        if (!quiet) {
+            console.error(`\nWrote ${name}`);
+        }
     },
     get_url: async function (url, image = false) {
         return request_promise(url, { method: 'GET', json: !image, image: image });
@@ -156,6 +162,15 @@ function build_parser() {
     return require('yargs/yargs')(process.argv.slice(2))
         .scriptName('ficlivedl')
         .usage('Usage: $0 <command> [options]\n       $0 [options] STORY_URL')
+        .option('quiet', {
+            alias: 'q',
+            type: 'boolean',
+            default: false,
+            describe: 'Suppress progress and status messages (JSON on stdout still printed)'
+        })
+        .middleware((argv) => {
+            quiet = !!argv.quiet;
+        })
         .command(
             '$0 [url]',
             'Download a story',
@@ -230,7 +245,9 @@ function build_parser() {
                 let text = JSON.stringify(result, null, 2);
                 if (argv.out) {
                     await fs.writeFile(argv.out, text, { mode: 0o644 });
-                    console.error(`\nWrote ${argv.out} (${result.story_count} stories)`);
+                    if (!quiet) {
+                        console.error(`\nWrote ${argv.out} (${result.story_count} stories)`);
+                    }
                 }
                 else {
                     if (bar !== null) {

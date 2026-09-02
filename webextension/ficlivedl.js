@@ -1147,7 +1147,7 @@ async function listStories(opts, funcs) {
                 break;
             }
             funcs.signal_state({
-                stage: `Listing stories (page ${page})`,
+                stage: `Listing stories`,
                 done: pages_fetched,
                 total: end ? (end - start + 1) : undefined
             });

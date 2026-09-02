@@ -30,6 +30,7 @@ Options:
 - `--no-appendices` — omit `#special` appendix chapters (ePub only; archive always includes them)
 - `--no-images` — skip image binaries (URLs remain in JSON for archive)
 - `--no-writeins` — omit reader posts (ePub only; archive always includes them)
+- `--quiet` / `-q` — suppress progress and status messages (errors still print)
 
 ### List stories
 
@@ -41,7 +42,8 @@ Dump the `/stories` board to JSON (for bulk-archive planning):
 ```
 
 Options: `--out`/`-o`, `--start-page`, `--end-page`, `--sort`
-(`new|active|hot|chapter|replies|like`), `--board` (default `stories`).
+(`new|active|hot|chapter|replies|like`), `--board` (default `stories`),
+`--quiet`/`-q` (progress off; JSON on stdout unchanged).
 
 Each story object is the raw API payload plus a derived `url`.
 
