@@ -3,12 +3,3 @@ node_modules/
 web-ext-artifacts/
 webextension-brave/
 data/
-
-# Python / uv (archive project)
-archive/.venv/
-archive/dist/
-archive/*.egg-info/
-archive/src/*.egg-info/
-**/__pycache__/
-*.py[cod]
-.python-version
