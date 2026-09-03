@@ -401,7 +401,11 @@ function Story(opts, funcs) {
                 }
                 let entries = [];
                 for (let k of votes) {
-                    let ent_html = `<p>${escape_html(e.votes[k])}</p>`;
+                    let vote = e.votes[k];
+                    if (typeof vote !== 'string') {
+                        continue;
+                    }
+                    let ent_html = `<p>${escape_html(vote)}</p>`;
                     if (k in dice) {
                         ent_html = `<div class="dice">${dice[k]}</div>` + ent_html;
                         delete dice[k];
@@ -424,11 +428,15 @@ function Story(opts, funcs) {
                 for (let k in e.votes) {
                     if (Array.isArray(e.votes[k])) {
                         for (let v of e.votes[k]) {
-                            votes[v].count += 1;
+                            if (votes[v] !== undefined) {
+                                votes[v].count += 1;
+                            }
                         }
                     }
                     else {
-                        votes[e.votes[k]].count += 1;
+                        if (votes[e.votes[k]] !== undefined) {
+                            votes[e.votes[k]].count += 1;
+                        }
                     }
                 }
                 for (let i of xout) {
