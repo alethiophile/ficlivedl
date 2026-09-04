@@ -13,7 +13,9 @@
         "*://fiction.live/*",
         "*://*.fiction.live/*",
         "*://*.cloudfront.net/*",
-        "downloads"
+        "downloads",
+        "webRequest",
+        "webRequestBlocking"
     ],
 
     "browser_action": {

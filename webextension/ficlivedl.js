@@ -1334,7 +1334,17 @@ async function downloadStory(opts, funcs) {
     }
     catch (e) {
         console.error(e);
-        funcs.signal_state({ 'error': e && e.message ? e.message : String(e) });
+        let msg;
+        if (e && e.message) {
+            msg = e.message;
+        }
+        else if (e && typeof e.status === 'number') {
+            msg = 'HTTP ' + e.status + (e.responseURL ? ' ' + e.responseURL : '');
+        }
+        else {
+            msg = String(e);
+        }
+        funcs.signal_state({ 'error': msg });
         throw e;
     }
 }

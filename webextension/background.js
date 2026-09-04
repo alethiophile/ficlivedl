@@ -13,7 +13,7 @@ let ficlivedl = require('./ficlivedl');
      done: number already downloaded
      total: number overall
    }
-*/
+ */
 let downloadState = null;
 
 function download_running() {
@@ -30,6 +30,44 @@ function signal_state(state_msg) {
         'action': 'dl_state',
         'data': downloadState
     }).catch(() => 0);
+}
+
+// fiction.live returns HTTP 500 when Origin is moz-extension:// or
+// chrome-extension://. Background XHR/fetch cannot omit Origin, so rewrite
+// it (and Referer) to the site origin before the request goes out.
+const SITE_ORIGIN = 'https://fiction.live';
+const EXTENSION_ORIGIN_RE = /^(moz|chrome)-extension:/i;
+
+function rewrite_extension_origin_headers(details) {
+    let headers = details.requestHeaders || [];
+    let changed = false;
+    for (let h of headers) {
+        let name = h.name.toLowerCase();
+        if (name !== 'origin' && name !== 'referer') {
+            continue;
+        }
+        if (typeof h.value === 'string' && EXTENSION_ORIGIN_RE.test(h.value)) {
+            h.value = name === 'referer' ? SITE_ORIGIN + '/' : SITE_ORIGIN;
+            changed = true;
+        }
+    }
+    if (!changed) {
+        return {};
+    }
+    return { requestHeaders: headers };
+}
+
+if (browser.webRequest && browser.webRequest.onBeforeSendHeaders) {
+    browser.webRequest.onBeforeSendHeaders.addListener(
+        rewrite_extension_origin_headers,
+        {
+            urls: [
+                '*://fiction.live/*',
+                '*://*.fiction.live/*'
+            ]
+        },
+        ['blocking', 'requestHeaders']
+    );
 }
 
 let funcs = {
