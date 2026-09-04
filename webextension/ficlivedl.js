@@ -451,20 +451,23 @@ function Story(opts, funcs) {
             else if (e.nt === 'choice') {
                 let title = 'b' in e ? e.b : 'Choices';
                 let html = `<h3>${title}</h3>`;
-                let votes = e.choices.map(x => { return { vote: x, count: 0, xout: false }; });
+                // Some closed custom votes omit choices/votes entirely.
+                let choice_list = Array.isArray(e.choices) ? e.choices : [];
+                let votes = choice_list.map(x => { return { vote: x, count: 0, xout: false }; });
                 let xout = 'xOut' in e ? e.xOut : [];
                 let reasons = 'xOutReasons' in e ? e.xOutReasons : {};
-                for (let k in e.votes) {
-                    if (Array.isArray(e.votes[k])) {
-                        for (let v of e.votes[k]) {
+                let vote_map = e.votes && typeof e.votes === 'object' ? e.votes : {};
+                for (let k in vote_map) {
+                    if (Array.isArray(vote_map[k])) {
+                        for (let v of vote_map[k]) {
                             if (votes[v] !== undefined) {
                                 votes[v].count += 1;
                             }
                         }
                     }
                     else {
-                        if (votes[e.votes[k]] !== undefined) {
-                            votes[e.votes[k]].count += 1;
+                        if (votes[vote_map[k]] !== undefined) {
+                            votes[vote_map[k]].count += 1;
                         }
                     }
                 }
