@@ -14,9 +14,10 @@ function handleDownloadClick() {
         download_special: true,
         download_type: 'epub',
         download_images: true,
-        reader_posts: true
+        reader_posts: true,
+        download_chat: false
     };
-    for (let i of ['download_special', 'download_images', 'reader_posts']) {
+    for (let i of ['download_special', 'download_images', 'reader_posts', 'download_chat']) {
         message[i] = $('#' + i).prop('checked');
     }
     message['download_type'] = dl_type_value();
@@ -69,21 +70,36 @@ function dl_type_value() {
     return rv;
 }
 
+let last_dl_type = null;
+
 function form_consistency_check() {
     let dl_type = dl_type_value();
     if (dl_type === 'archive') {
         $('#download_special').prop('disabled', true).prop('checked', true);
         $('#reader_posts').prop('disabled', true).prop('checked', true);
+        $('#download_chat').prop('disabled', false);
+        // Default chat on when entering archive; keep user choice after that.
+        if (last_dl_type !== 'archive') {
+            $('#download_chat').prop('checked', true);
+        }
+        $('#download_chat_label').attr('title', '');
     } else {
         $('#download_special').prop('disabled', false);
         $('#reader_posts').prop('disabled', false);
+        $('#download_chat').prop('disabled', true).prop('checked', false);
+        $('#download_chat_label').attr(
+            'title',
+            'Chat and topics are only included in a full data archive'
+        );
     }
+    last_dl_type = dl_type;
 }
 
 function setup_form() {
-    $('#download').click(handleDownloadClick);
-    $('#adv_toggle').click(adv_toggle);
-    $('#new_dl').find('input').change(form_consistency_check);
+    $('#download').off('click').click(handleDownloadClick);
+    $('#adv_toggle').off('click').click(adv_toggle);
+    $('#new_dl').find('input').off('change').change(form_consistency_check);
+    form_consistency_check();
     browser.tabs.query({
         active: true,
         windowId: browser.windows.WINDOW_ID_CURRENT

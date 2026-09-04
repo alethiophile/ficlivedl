@@ -107,7 +107,9 @@ downloaded into `images/` when images are enabled (avatars are not).
 This requires Mozilla's `web-ext` tool. Alternatively, you can run
 `./build.sh dev` to compile the addon within the source directory.
 
-The extension popup supports ePub and full data archive (including chat
-and topics). Story listing and metadata-only mode are CLI-only.
+The extension popup supports ePub and full data archive. For archive
+downloads, an **Include chat** checkbox controls main chat and topics
+(on by default; ePub locks it off). Story listing and metadata-only
+mode are CLI-only.
 
 Icon from icons8.com
