@@ -189,6 +189,33 @@ function escape_html(txt) {
          .replace(/'/g, "&#039;");
 }
 
+// Serialize { ...meta, [array_key]: array } without JSON.stringify on the whole
+// value. Megachat rooms exceed V8's max string length; per-element stringify
+// + Blob/Buffer parts stays under that limit. Same shape on disk either way.
+function json_with_array_content(meta, array_key, array) {
+    let head = '{';
+    let first = true;
+    for (let k of Object.keys(meta)) {
+        first = false;
+        head += JSON.stringify(k) + ':' + JSON.stringify(meta[k]) + ',';
+    }
+    head += JSON.stringify(array_key) + ':[';
+
+    let parts = [head];
+    for (let i = 0; i < array.length; i++) {
+        if (i > 0) {
+            parts.push(',');
+        }
+        parts.push(JSON.stringify(array[i]));
+    }
+    parts.push(']}');
+
+    if (typeof Blob !== 'undefined') {
+        return new Blob(parts, { type: 'application/json' });
+    }
+    return Buffer.concat(parts.map(p => Buffer.from(p, 'utf8')));
+}
+
 // the fiction.live frontend script does a bunch of manual transforms
 // on the image URLs the API ships out before actually fetching them;
 // this is incredibly stupid but there you go
@@ -1134,16 +1161,20 @@ img {
                 return;
             }
             let messages = chat.messages || [];
+            let message_count = chat.message_count != null
+                ? chat.message_count
+                : messages.filter(m => m && m._id).length;
             files.push({
                 name: `${prefix}/chat.json`,
-                content: JSON.stringify({
-                    count: chat.count,
-                    pages: chat.pages,
-                    message_count: chat.message_count != null
-                        ? chat.message_count
-                        : messages.filter(m => m && m._id).length,
-                    messages: messages
-                })
+                content: json_with_array_content(
+                    {
+                        count: chat.count,
+                        pages: chat.pages,
+                        message_count: message_count
+                    },
+                    'messages',
+                    messages
+                )
             });
         },
         generate_archive: async function () {
