@@ -254,6 +254,14 @@ function build_parser() {
                 .boolean('no-writeins')
                 .describe('no-writeins', "Don't include reader posts")
                 .default('writeins', true)
+                .boolean('no-chat')
+                .describe('no-chat', 'Omit main chat and topics (archive/dir only)')
+                .default('chat', true)
+                .boolean('chat-only')
+                .describe(
+                    'chat-only',
+                    'Write chat/topics (+ partial images.json) only; requires --out; implies no image binaries'
+                )
                 .describe('file-type', "What type of file to write")
                 .choices('file-type', ['archive', 'dir', 'epub', 'metadata'])
                 .default('file-type', 'epub'),
@@ -263,19 +271,49 @@ function build_parser() {
                     console.error('You must provide a story URL');
                     process.exit(1);
                 }
-                let opts = {
-                    url: url,
-                    download_special: argv.appendices,
-                    download_type: argv.fileType,
-                    download_images: argv.images,
-                    reader_posts: argv.writeins,
-                    download_delay: argv.delay
-                };
-                try {
-                    await ficlivedl.downloadStory(opts, funcs);
+                if (argv.chatOnly) {
+                    if (!argv.out) {
+                        console.error('--chat-only requires --out (directory)');
+                        process.exit(1);
+                    }
+                    if (argv.chat === false) {
+                        console.error('--chat-only conflicts with --no-chat');
+                        process.exit(1);
+                    }
+                    let opts = {
+                        url: url,
+                        download_images: false,
+                        download_delay: argv.delay
+                    };
+                    try {
+                        let story = ficlivedl.Story(opts, funcs);
+                        await story.download_node();
+                        await story.download_chat();
+                        await story.download_topics();
+                        story.collect_extra_images();
+                        await story.generate_chat_archive_dir();
+                        funcs.signal_state(null);
+                    }
+                    catch (e) {
+                        download_failed = true;
+                    }
                 }
-                catch (e) {
-                    download_failed = true;
+                else {
+                    let opts = {
+                        url: url,
+                        download_special: argv.appendices,
+                        download_type: argv.fileType,
+                        download_images: argv.images,
+                        download_chat: argv.chat !== false,
+                        reader_posts: argv.writeins,
+                        download_delay: argv.delay
+                    };
+                    try {
+                        await ficlivedl.downloadStory(opts, funcs);
+                    }
+                    catch (e) {
+                        download_failed = true;
+                    }
                 }
                 if (download_failed) {
                     process.exit(1);

@@ -35,9 +35,17 @@ Options:
 - `--no-appendices` — omit `#special` appendix chapters (ePub only; archive/dir always include them)
 - `--no-images` — skip image binaries (URLs remain in JSON for archive/dir)
 - `--no-writeins` — omit reader posts (ePub only; archive/dir always include them)
+- `--no-chat` — omit main chat and topics (archive/dir only; default is to include them)
+- `--chat-only` — fetch/write chat + topics only (no chapters). Requires `--out`.
+  Implies no image binaries. Writes `chat/`, `topics/`, and a partial
+  `images.json` (URLs from chat/topics only). Conflicts with `--no-chat`.
+  Pure producer: does not read or merge an existing story directory.
 - `--quiet` / `-q` — suppress progress and status messages (errors still print)
 
 Hard failures exit with status code 1.
+
+Bulk archives often use `--file-type dir --no-images --no-chat` for chapters,
+then a separate `--chat-only --out TEMP` pass to fill chat later.
 
 ### List stories
 
@@ -77,7 +85,9 @@ and chronological `messages` from the main story chat API. Fetches use
 the site’s threading chat mode (300 messages per `POST /api/chat/page`
 request). Reply-to links (`ra`) and chapter anchors (`r`) are already on
 each message; no separate replies tree is stored. Topic rooms use the
-same shape under `topics/{id}/chat.json`.
+same shape under `topics/{id}/chat.json`. With `--no-chat`, `chat/` and
+`topics/` are omitted. `--chat-only` writes only those trees plus
+`images.json` (no `metadata.json` / `chapters.*`).
 
 `images.json` always lists discovered image URLs and local filenames.
 Names use the URL basename; colliding basenames for different URLs get

@@ -1009,6 +1009,37 @@ ${desc}
             }
             return funcs.save_file(fn, new Blob([content], { type: 'application/json' }));
         },
+        // Chat/topics + images.json only (no chapters). Used by full archive
+        // and by CLI --chat-only. Caller must have run chat/topics fetch and
+        // collect_extra_images (or equivalent registry population).
+        build_chat_archive_files: function () {
+            let files = [];
+            this.push_chat_files(files, 'chat', this.chat_archive);
+
+            if (this.topics_archive) {
+                files.push({
+                    name: 'topics/index.json',
+                    content: JSON.stringify({
+                        count: this.topics_archive.count,
+                        index: this.topics_archive.index
+                    })
+                });
+                for (let t of this.topics_archive.topics || []) {
+                    let base = `topics/${t.id}`;
+                    files.push({
+                        name: `${base}/node.json`,
+                        content: JSON.stringify(t.node)
+                    });
+                    this.push_chat_files(files, base, t.chat);
+                }
+            }
+
+            files.push({
+                name: 'images.json',
+                content: JSON.stringify(this.image_registry.to_json(), null, 2)
+            });
+            return files;
+        },
         build_archive_files: function () {
             let chapter_html = [ { 'name': 'Title page', content: this.make_title_page() } ];
             for (let c of this.chapters) {
@@ -1035,30 +1066,7 @@ ${desc}
                 });
             }
 
-            this.push_chat_files(files, 'chat', this.chat_archive);
-
-            if (this.topics_archive) {
-                files.push({
-                    name: 'topics/index.json',
-                    content: JSON.stringify({
-                        count: this.topics_archive.count,
-                        index: this.topics_archive.index
-                    })
-                });
-                for (let t of this.topics_archive.topics || []) {
-                    let base = `topics/${t.id}`;
-                    files.push({
-                        name: `${base}/node.json`,
-                        content: JSON.stringify(t.node)
-                    });
-                    this.push_chat_files(files, base, t.chat);
-                }
-            }
-
-            files.push({
-                name: 'images.json',
-                content: JSON.stringify(this.image_registry.to_json(), null, 2)
-            });
+            files.push(...this.build_chat_archive_files());
 
             let images = 'story_images' in this ? this.story_images : [];
             for (let i of images) {
@@ -1221,6 +1229,18 @@ img {
                 throw new Error('Directory archive requires funcs.save_dir');
             }
             return funcs.save_dir(dirname, files);
+        },
+        generate_chat_archive_dir: async function () {
+            signal_state({
+                'title': this.title(),
+                'stage': 'Writing chat archive directory',
+            });
+            let files = this.build_chat_archive_files();
+            let dirname = to_filename(this.title());
+            if (!funcs.save_dir) {
+                throw new Error('Directory archive requires funcs.save_dir');
+            }
+            return funcs.save_dir(dirname, files);
         }
     };
 }
@@ -1233,6 +1253,7 @@ options accepted:
     download_special, // whether to include appendices
     download_type, // file type to download: epub | archive | dir | metadata | none
     download_images, // whether to include images
+    download_chat, // archive/dir: fetch main chat + topics (default true)
     reader_posts, // whether to include write-ins
     download_delay // seconds between API requests (default 0.5)
 }
@@ -1254,6 +1275,8 @@ async function downloadStory(opts, funcs) {
         });
     }
 
+    let download_chat = opts.download_chat !== false;
+
     let story = Story(opts, funcs);
     try {
         await story.download_node();
@@ -1267,9 +1290,16 @@ async function downloadStory(opts, funcs) {
         await story.download_chapters();
 
         if (opts.download_type === 'archive' || opts.download_type === 'dir') {
-            await story.download_chat();
-            await story.download_topics();
-            story.collect_extra_images();
+            if (download_chat) {
+                await story.download_chat();
+                await story.download_topics();
+                story.collect_extra_images();
+            }
+            else {
+                // Chapter imgs already registered in process_html; cover for
+                // images.json naming when chat/topics are skipped.
+                story.ensure_cover_registered();
+            }
         }
         else {
             // ePub: still register cover for naming; chapter imgs already
@@ -1412,6 +1442,7 @@ async function listStories(opts, funcs) {
 
 exports.downloadStory = downloadStory;
 exports.listStories = listStories;
+exports.Story = Story;
 exports.encode_form = encode_form;
 exports.process_image_url = process_image_url;
 exports.story_page_url = story_page_url;
