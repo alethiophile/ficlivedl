@@ -9,7 +9,9 @@ let nodepub = require('nodepub');
 let sanitizeHtml = require('sanitize-html');
 let JSZip = require('jszip');
 
-const CHAT_POSTS_PER_PAGE = 30;
+// Site chat UI uses 30/page normally; threading mode returns 300/page.
+// POST /api/chat/page honors threading:true at 300; other size knobs are ignored.
+const CHAT_POSTS_PER_PAGE = 300;
 const TOPIC_PAGE_SIZE = 30;
 const API_BASE = 'https://fiction.live';
 
@@ -636,6 +638,9 @@ function Story(opts, funcs) {
         // Download full chat history for a room id (story or topic).
         // Main chat/page already includes reply-to links (ra) and chapter
         // anchors (r); no per-message light/page fetches.
+        // Uses site threading mode (300 msgs/page) via threading:true.
+        // Seed CT window from /latest (not /threading) — seeding from the
+        // threading endpoint with cpr=final returns empty pages.
         // Returns { messages, count, pages, message_count }.
         download_chat_room: async function (room_id, stage_label, title) {
             let delay = this.download_delay;
@@ -669,7 +674,8 @@ function Story(opts, funcs) {
                 r: room_id,
                 lastCT: sorted_latest[sorted_latest.length - 1].ct,
                 firstCT: sorted_latest[0].ct,
-                cpr: final_page
+                cpr: final_page,
+                threading: true
             };
 
             let chat = [];
@@ -790,7 +796,7 @@ function Story(opts, funcs) {
                 ti += 1;
                 signal_state({
                     'title': title,
-                    'stage': 'Fetching topic data',
+                    'stage': 'Fetching topics',
                     'done': ti - 1,
                     'total': index.length
                 });
@@ -809,7 +815,7 @@ function Story(opts, funcs) {
 
                 let chat = await this.download_chat_room(
                     topic_id,
-                    `Fetching topic chat (${ti}/${index.length})`,
+                    `Fetching topics`,
                     title
                 );
 

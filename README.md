@@ -73,10 +73,11 @@ topics/{topicId}/chat.json
 ```
 
 `chat/chat.json` is one object with `count`, `pages`, `message_count`,
-and chronological `messages` from the main story chat API. Reply-to
-links (`ra`) and chapter anchors (`r`) are already on each message; no
-separate replies tree is stored. Topic rooms use the same shape under
-`topics/{id}/chat.json`.
+and chronological `messages` from the main story chat API. Fetches use
+the site’s threading chat mode (300 messages per `POST /api/chat/page`
+request). Reply-to links (`ra`) and chapter anchors (`r`) are already on
+each message; no separate replies tree is stored. Topic rooms use the
+same shape under `topics/{id}/chat.json`.
 
 `images.json` always lists discovered image URLs and local filenames.
 Names use the URL basename; colliding basenames for different URLs get
