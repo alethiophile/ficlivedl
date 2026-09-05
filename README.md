@@ -63,6 +63,16 @@ unchanged).
 
 Each story object is the raw API payload plus a derived `url`.
 
+Exit codes for `list-stories`:
+
+| Code | Meaning                                                                                                                                                                        |
+|------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 0    | Success (including empty `stories` on HTTP 200). Multi-page runs that hit board past-end (**404** / **524**) after at least one good page still write partial JSON and exit 0. |
+| 1    | Generic error (network, other HTTP, bugs, usage).                                                                                                                              |
+| 2    | No more pages: the first page of this invocation returned board past-end (**404** / **524**). No JSON is written.                                                              |
+
+Story download / `--chat-only` still use only 0 / 1.
+
 ### Full data archive layout
 
 Used by both `--file-type archive` (ZIP) and `--file-type dir` (directory):

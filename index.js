@@ -17,6 +17,11 @@ let out_path = null;
 let user_agent = '';
 let download_failed = false;
 
+// CLI exit codes (list-stories uses 2 for board past-end).
+const EXIT_OK = 0;
+const EXIT_ERROR = 1;
+const EXIT_NO_MORE_PAGES = 2;
+
 function request_promise(url, options = {}) {
     let method = options.method || 'GET';
     let body = options.body || null;
@@ -360,7 +365,16 @@ function build_parser() {
                     }, funcs);
                 }
                 catch (e) {
-                    process.exit(1);
+                    let msg = (e && e.message) ? e.message : String(e);
+                    if (ficlivedl.is_board_eof_error(e)) {
+                        // First page of this invocation was past end; no JSON.
+                        if (!quiet) {
+                            console.error(msg);
+                        }
+                        process.exit(EXIT_NO_MORE_PAGES);
+                    }
+                    console.error(e);
+                    process.exit(EXIT_ERROR);
                 }
                 let text = JSON.stringify(result, null, 2);
                 if (argv.out) {
@@ -390,5 +404,5 @@ async function main() {
 
 main().catch((e) => {
     console.error(e);
-    process.exit(1);
+    process.exit(EXIT_ERROR);
 });

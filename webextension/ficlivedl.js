@@ -1384,6 +1384,14 @@ function build_board_query(opts) {
     return params.toString();
 }
 
+// Board past-end responses (Cloudflare empty / missing page).
+const BOARD_EOF_HTTP_STATUSES = new Set([404, 524]);
+
+function is_board_eof_error(e) {
+    let code = e && e.statusCode;
+    return typeof code === 'number' && BOARD_EOF_HTTP_STATUSES.has(code);
+}
+
 /*
 listStories options:
 {
@@ -1393,6 +1401,11 @@ listStories options:
   sort: 'new'|'active'|'hot'|'chapter'|'replies'|'like',
   contentRating / storyStatus / rInteract optional overrides
 }
+
+Past-end HTTP 404/524:
+  - after at least one successful page this call: stop and return partial JSON
+  - on the first page of this call: rethrow (CLI maps to exit 2)
+Empty stories array on HTTP 200: stop and return (success).
 */
 async function listStories(opts, funcs) {
     let board = opts.board || 'stories';
@@ -1416,7 +1429,16 @@ async function listStories(opts, funcs) {
             });
             let qs = build_board_query(Object.assign({}, opts, { page, sort }));
             let url = `${API_BASE}/api/anonkun/board/${board}?${qs}`;
-            let data = await funcs.get_url(url);
+            let data;
+            try {
+                data = await funcs.get_url(url);
+            }
+            catch (e) {
+                if (is_board_eof_error(e) && pages_fetched > 0) {
+                    break;
+                }
+                throw e;
+            }
             let stories = (data && data.stories) ? data.stories : [];
             pages_fetched += 1;
             if (!stories.length) {
@@ -1455,6 +1477,8 @@ async function listStories(opts, funcs) {
 
 exports.downloadStory = downloadStory;
 exports.listStories = listStories;
+exports.is_board_eof_error = is_board_eof_error;
+exports.BOARD_EOF_HTTP_STATUSES = BOARD_EOF_HTTP_STATUSES;
 exports.Story = Story;
 exports.encode_form = encode_form;
 exports.process_image_url = process_image_url;
