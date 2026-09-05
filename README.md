@@ -58,8 +58,9 @@ Dump the `/stories` board to JSON (for bulk-archive planning):
 
 Options: `--out`/`-o`, `--start-page`, `--end-page`, `--sort`
 (`new|active|hot|chapter|replies|like`), `--board` (default `stories`),
-`--delay`, `--user-agent`, `--quiet`/`-q` (progress off; JSON on stdout
-unchanged).
+`--filter-key` (`all` or axis partition `rating:…` / `length:…` /
+`status:…`), `--delay`, `--user-agent`, `--quiet`/`-q` (progress off;
+JSON on stdout unchanged).
 
 Each story object is the raw API payload plus a derived `url`.
 

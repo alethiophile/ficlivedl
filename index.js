@@ -352,6 +352,13 @@ function build_parser() {
                     describe: 'Board name',
                     type: 'string',
                     default: 'stories'
+                })
+                .option('filter-key', {
+                    describe:
+                        'Board filter partition: all | rating:teen|mature|nsfw|unrated | '
+                        + 'length:Any|Short|Medium|Long|Epic | status:active|finished|hiatus',
+                    type: 'string',
+                    default: 'all'
                 }),
             async (argv) => {
                 let result;
@@ -361,6 +368,7 @@ function build_parser() {
                         start_page: argv.startPage,
                         end_page: argv.endPage,
                         sort: argv.sort,
+                        filter_key: argv.filterKey,
                         download_delay: argv.delay
                     }, funcs);
                 }

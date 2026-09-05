@@ -1349,7 +1349,62 @@ async function downloadStory(opts, funcs) {
     }
 }
 
+const BOARD_LENGTHS = new Set(['Any', 'Short', 'Medium', 'Long', 'Epic']);
+const BOARD_RATINGS = ['teen', 'mature', 'nsfw', 'unrated'];
+const BOARD_STATUSES = ['active', 'finished', 'hiatus'];
+const BOARD_INTERACT = ['none', 'light', 'medium', 'heavy'];
+
+/*
+ * filter_key (archive discover):
+ *   'all' | 'rating:teen|mature|nsfw|unrated' | 'length:Short|...' | 'status:active|...'
+ * Axis partitions: one axis narrowed; others fully on.
+ */
+function apply_filter_key(opts) {
+    let key = opts.filter_key || opts.filterKey || 'all';
+    let out = Object.assign({}, opts);
+    out.filter_key = key;
+    out.length = out.length || 'Any';
+    out.contentRating = out.contentRating || {
+        teen: true, mature: true, nsfw: true, unrated: true
+    };
+    out.storyStatus = out.storyStatus || {
+        active: true, finished: true, hiatus: true
+    };
+    out.rInteract = out.rInteract || {
+        none: true, light: true, medium: true, heavy: true
+    };
+    if (!key || key === 'all') {
+        return out;
+    }
+    let m;
+    if ((m = /^rating:(teen|mature|nsfw|unrated)$/.exec(key))) {
+        let only = m[1];
+        out.contentRating = {};
+        for (let k of BOARD_RATINGS) {
+            out.contentRating[k] = (k === only);
+        }
+        return out;
+    }
+    if ((m = /^length:(Any|Short|Medium|Long|Epic)$/.exec(key))) {
+        out.length = m[1];
+        return out;
+    }
+    if ((m = /^status:(active|finished|hiatus)$/.exec(key))) {
+        let only = m[1];
+        out.storyStatus = {};
+        for (let k of BOARD_STATUSES) {
+            out.storyStatus[k] = (k === only);
+        }
+        return out;
+    }
+    throw new Error(
+        'unknown filter_key: ' + key +
+        ' (expected all | rating:… | length:… | status:…)'
+    );
+}
+
 function build_board_query(opts) {
+    opts = apply_filter_key(opts);
     let page = opts.page || 1;
     let sort = opts.sort || 'new';
     let params = new URLSearchParams();
@@ -1357,25 +1412,19 @@ function build_board_query(opts) {
     params.set('sort', sort);
     params.set('length', opts.length || 'Any');
 
-    let ratings = opts.contentRating || {
-        teen: true, mature: true, nsfw: true, unrated: true
-    };
+    let ratings = opts.contentRating;
     for (let k of Object.keys(ratings)) {
         if (ratings[k]) {
             params.set(`contentRating[${k}]`, 'true');
         }
     }
-    let statuses = opts.storyStatus || {
-        active: true, finished: true, hiatus: true
-    };
+    let statuses = opts.storyStatus;
     for (let k of Object.keys(statuses)) {
         if (statuses[k]) {
             params.set(`storyStatus[${k}]`, 'true');
         }
     }
-    let interact = opts.rInteract || {
-        none: true, light: true, medium: true, heavy: true
-    };
+    let interact = opts.rInteract;
     for (let k of Object.keys(interact)) {
         if (interact[k]) {
             params.set(`rInteract[${k}]`, 'true');
@@ -1399,7 +1448,8 @@ listStories options:
   start_page: 1,
   end_page: null (until empty),
   sort: 'new'|'active'|'hot'|'chapter'|'replies'|'like',
-  contentRating / storyStatus / rInteract optional overrides
+  filter_key: 'all'|rating:…|length:…|status:… (default all),
+  contentRating / storyStatus / rInteract / length optional overrides
 }
 
 Past-end HTTP 404/524:
@@ -1457,6 +1507,7 @@ async function listStories(opts, funcs) {
             scraped_at: new Date().toISOString(),
             board: board,
             sort: sort,
+            filter_key: (opts.filter_key || opts.filterKey || 'all'),
             start_page: start,
             end_page: end,
             pages_fetched: pages_fetched,
@@ -1477,6 +1528,8 @@ async function listStories(opts, funcs) {
 
 exports.downloadStory = downloadStory;
 exports.listStories = listStories;
+exports.apply_filter_key = apply_filter_key;
+exports.build_board_query = build_board_query;
 exports.is_board_eof_error = is_board_eof_error;
 exports.BOARD_EOF_HTTP_STATUSES = BOARD_EOF_HTTP_STATUSES;
 exports.Story = Story;
