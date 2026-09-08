@@ -217,6 +217,26 @@ function common_options(y) {
         });
 }
 
+function user_list_options(y) {
+    return common_options(y)
+        .option('user', {
+            alias: 'user-id',
+            describe: 'User id or username (case-sensitive)',
+            type: 'string',
+            demandOption: true
+        })
+        .option('out', {
+            alias: 'o',
+            describe: 'Output JSON file (default: stdout)',
+            type: 'string'
+        });
+}
+
+function user_arg(argv) {
+    // yargs: --user and alias --user-id both land on argv.user
+    return argv.user || argv.userId;
+}
+
 function build_parser() {
     return require('yargs/yargs')(process.argv.slice(2))
         .scriptName('ficlivedl')
@@ -390,20 +410,13 @@ function build_parser() {
         .command(
             'list-user-stories',
             'List stories authored by a user as JSON (GET userStories)',
-            (y) => common_options(y)
-                .option('user-id', {
-                    describe: 'User id',
-                    type: 'string',
-                    demandOption: true
-                })
-                .option('out', {
-                    alias: 'o',
-                    describe: 'Output JSON file (default: stdout)',
-                    type: 'string'
-                }),
+            (y) => user_list_options(y),
             async (argv) => {
                 let result = await run_list_command(() =>
-                    ficlivedl.listUserStories({ user_id: argv.userId }, funcs)
+                    ficlivedl.listUserStories({
+                        user: user_arg(argv),
+                        download_delay: argv.delay
+                    }, funcs)
                 );
                 await write_json_result(argv, result, result.story_count + ' stories');
             }
@@ -411,20 +424,13 @@ function build_parser() {
         .command(
             'list-user-following',
             'List users followed by a user as JSON (GET following)',
-            (y) => common_options(y)
-                .option('user-id', {
-                    describe: 'User id',
-                    type: 'string',
-                    demandOption: true
-                })
-                .option('out', {
-                    alias: 'o',
-                    describe: 'Output JSON file (default: stdout)',
-                    type: 'string'
-                }),
+            (y) => user_list_options(y),
             async (argv) => {
                 let result = await run_list_command(() =>
-                    ficlivedl.listUserFollowing({ user_id: argv.userId }, funcs)
+                    ficlivedl.listUserFollowing({
+                        user: user_arg(argv),
+                        download_delay: argv.delay
+                    }, funcs)
                 );
                 await write_json_result(argv, result, result.user_count + ' users');
             }
@@ -432,20 +438,13 @@ function build_parser() {
         .command(
             'list-user-followers',
             'List followers of a user as JSON (GET followers; server cap ~500)',
-            (y) => common_options(y)
-                .option('user-id', {
-                    describe: 'User id',
-                    type: 'string',
-                    demandOption: true
-                })
-                .option('out', {
-                    alias: 'o',
-                    describe: 'Output JSON file (default: stdout)',
-                    type: 'string'
-                }),
+            (y) => user_list_options(y),
             async (argv) => {
                 let result = await run_list_command(() =>
-                    ficlivedl.listUserFollowers({ user_id: argv.userId }, funcs)
+                    ficlivedl.listUserFollowers({
+                        user: user_arg(argv),
+                        download_delay: argv.delay
+                    }, funcs)
                 );
                 let summary = result.user_count + ' users'
                     + (result.truncated ? ' (truncated)' : '');
@@ -455,20 +454,13 @@ function build_parser() {
         .command(
             'list-user-collections',
             'List a user\'s collections + story id lists as JSON (GET userCollections)',
-            (y) => common_options(y)
-                .option('user-id', {
-                    describe: 'User id',
-                    type: 'string',
-                    demandOption: true
-                })
-                .option('out', {
-                    alias: 'o',
-                    describe: 'Output JSON file (default: stdout)',
-                    type: 'string'
-                }),
+            (y) => user_list_options(y),
             async (argv) => {
                 let result = await run_list_command(() =>
-                    ficlivedl.listUserCollections({ user_id: argv.userId }, funcs)
+                    ficlivedl.listUserCollections({
+                        user: user_arg(argv),
+                        download_delay: argv.delay
+                    }, funcs)
                 );
                 await write_json_result(
                     argv,
@@ -476,6 +468,20 @@ function build_parser() {
                     result.collection_count + ' collections, '
                         + result.story_id_count + ' story ids'
                 );
+            }
+        )
+        .command(
+            'get-user',
+            'Look up a user profile by username or id (GET /api/user/…)',
+            (y) => user_list_options(y),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.getUserProfile({ user: user_arg(argv) }, funcs)
+                );
+                let summary = result.found
+                    ? (result.username || result.user_id)
+                    : 'not found';
+                await write_json_result(argv, result, summary);
             }
         )
         .command(

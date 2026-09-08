@@ -1530,6 +1530,10 @@ async function listStories(opts, funcs) {
  * Single-shot public GETs for user / review / node discovery.
  * Each returns { scraped_at, …, data } where data is the raw API body.
  * No pagination (APIs return one payload; followers hard-cap ~500 server-side).
+ *
+ * User list commands accept username or id: GET /api/user/{token} first;
+ * non-empty profile → use _id; empty body → treat token as raw user id.
+ * Username lookup is case-sensitive. List endpoints only accept ids.
  */
 async function get_json_endpoint(url, stage, funcs) {
     try {
@@ -1567,10 +1571,103 @@ function require_id(opts, key) {
     return id;
 }
 
-async function listUserStories(opts, funcs) {
-    let user_id = require_id(opts, 'user_id');
+function user_token_from_opts(opts) {
+    let token = opts.user || opts.user_id || opts.userId
+        || opts.username || opts.id;
+    if (!token || typeof token !== 'string') {
+        throw new Error('user is required (user id or username)');
+    }
+    token = token.trim();
+    if (!token) {
+        throw new Error('user is required (user id or username)');
+    }
+    return token;
+}
+
+function user_envelope_fields(resolved) {
+    let out = {
+        user_input: resolved.user_input,
+        user_id: resolved.user_id,
+        resolved_from: resolved.resolved_from
+    };
+    if (resolved.username) {
+        out.username = resolved.username;
+    }
+    return out;
+}
+
+/*
+ * GET /api/user/{username} — public profile. Empty body (HTTP 200) → null.
+ * Passing a user id also returns empty; missing usernames return empty.
+ * Lookup is case-sensitive.
+ */
+async function getUserProfile(opts, funcs) {
+    let token = user_token_from_opts(opts);
     let data = await get_json_endpoint(
-        `${API_BASE}/api/anonkun/userStories/${user_id}`,
+        `${API_BASE}/api/user/${encodeURIComponent(token)}`,
+        'Looking up user',
+        funcs
+    );
+    if (data === null || data === undefined || data === '') {
+        return {
+            scraped_at: new Date().toISOString(),
+            user_input: token,
+            found: false,
+            data: null
+        };
+    }
+    if (typeof data !== 'object' || Array.isArray(data) || !data._id) {
+        return {
+            scraped_at: new Date().toISOString(),
+            user_input: token,
+            found: false,
+            data: data
+        };
+    }
+    return {
+        scraped_at: new Date().toISOString(),
+        user_input: token,
+        found: true,
+        user_id: data._id,
+        username: data.username || null,
+        data: data
+    };
+}
+
+/*
+ * Resolve username-or-id → { user_input, user_id, username?, resolved_from }.
+ * Profile hit → username path. Empty profile → treat token as raw id.
+ */
+async function resolve_user_id(opts, funcs) {
+    let token = user_token_from_opts(opts);
+    let delay = opts.download_delay || 0;
+    let profile = await getUserProfile({ user: token }, funcs);
+    if (profile.found) {
+        if (delay > 0) {
+            await funcs.wait(delay);
+        }
+        return {
+            user_input: token,
+            user_id: profile.user_id,
+            username: profile.username,
+            resolved_from: 'username',
+            profile: profile.data
+        };
+    }
+    return {
+        user_input: token,
+        user_id: token,
+        username: null,
+        resolved_from: 'id',
+        profile: null
+    };
+}
+
+async function listUserStories(opts, funcs) {
+    let resolved = await resolve_user_id(opts, funcs);
+    let user_id = resolved.user_id;
+    let data = await get_json_endpoint(
+        `${API_BASE}/api/anonkun/userStories/${encodeURIComponent(user_id)}`,
         'Listing user stories',
         funcs
     );
@@ -1582,55 +1679,55 @@ async function listUserStories(opts, funcs) {
         }
         return entry;
     });
-    return {
+    return Object.assign(user_envelope_fields(resolved), {
         scraped_at: new Date().toISOString(),
-        user_id: user_id,
         story_count: enriched.length,
         stories: enriched,
         data: data
-    };
+    });
 }
 
 async function listUserFollowing(opts, funcs) {
-    let user_id = require_id(opts, 'user_id');
+    let resolved = await resolve_user_id(opts, funcs);
+    let user_id = resolved.user_id;
     let data = await get_json_endpoint(
-        `${API_BASE}/api/anonkun/following/${user_id}`,
+        `${API_BASE}/api/anonkun/following/${encodeURIComponent(user_id)}`,
         'Listing following',
         funcs
     );
     let users = Array.isArray(data) ? data : (data && data.users) ? data.users : [];
-    return {
+    return Object.assign(user_envelope_fields(resolved), {
         scraped_at: new Date().toISOString(),
-        user_id: user_id,
         user_count: users.length,
         users: users,
         data: data
-    };
+    });
 }
 
 async function listUserFollowers(opts, funcs) {
-    let user_id = require_id(opts, 'user_id');
+    let resolved = await resolve_user_id(opts, funcs);
+    let user_id = resolved.user_id;
     let data = await get_json_endpoint(
-        `${API_BASE}/api/anonkun/followers/${user_id}`,
+        `${API_BASE}/api/anonkun/followers/${encodeURIComponent(user_id)}`,
         'Listing followers',
         funcs
     );
     let users = Array.isArray(data) ? data : (data && data.users) ? data.users : [];
     // Server hard-caps around 500; true count may live on profile stat.follow.
-    return {
+    return Object.assign(user_envelope_fields(resolved), {
         scraped_at: new Date().toISOString(),
-        user_id: user_id,
         user_count: users.length,
         users: users,
         truncated: users.length >= 500,
         data: data
-    };
+    });
 }
 
 async function listUserCollections(opts, funcs) {
-    let user_id = require_id(opts, 'user_id');
+    let resolved = await resolve_user_id(opts, funcs);
+    let user_id = resolved.user_id;
     let data = await get_json_endpoint(
-        `${API_BASE}/api/anonkun/userCollections/${user_id}`,
+        `${API_BASE}/api/anonkun/userCollections/${encodeURIComponent(user_id)}`,
         'Listing user collections',
         funcs
     );
@@ -1650,15 +1747,14 @@ async function listUserCollections(opts, funcs) {
             }
         }
     }
-    return {
+    return Object.assign(user_envelope_fields(resolved), {
         scraped_at: new Date().toISOString(),
-        user_id: user_id,
         collection_count: collections.length,
         story_id_count: story_ids.length,
         story_ids: story_ids,
         collections: collections,
         data: data
-    };
+    });
 }
 
 async function listStoryReviews(opts, funcs) {
@@ -1714,6 +1810,8 @@ exports.listUserFollowers = listUserFollowers;
 exports.listUserCollections = listUserCollections;
 exports.listStoryReviews = listStoryReviews;
 exports.getNode = getNode;
+exports.getUserProfile = getUserProfile;
+exports.resolve_user_id = resolve_user_id;
 exports.apply_filter_key = apply_filter_key;
 exports.build_board_query = build_board_query;
 exports.is_board_eof_error = is_board_eof_error;

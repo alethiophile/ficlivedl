@@ -76,27 +76,36 @@ Story download / `--chat-only` still use only 0 / 1.
 Single-shot public GETs. JSON on stdout (or `--out`); exit 0 on success, 1 on
 error. Shared options: `--delay`, `--user-agent`, `--quiet`/`-q`, `--out`/`-o`.
 
+User list commands take **`--user`** (alias **`--user-id`**): a **username or
+user id**. Resolution: `GET /api/user/{token}` first (case-sensitive). Non-empty
+profile → use `_id`; empty body → treat the token as a raw user id. List APIs
+only accept ids; usernames must be resolved this way.
+
 ```
-./index.js list-user-stories --user-id USER_ID
-./index.js list-user-following --user-id USER_ID
-./index.js list-user-followers --user-id USER_ID   # server cap ~500
-./index.js list-user-collections --user-id USER_ID
+./index.js list-user-stories --user iwanttosee
+./index.js list-user-stories --user-id Z3GksMYLsx6hqAJPi
+./index.js list-user-following --user USER
+./index.js list-user-followers --user USER   # server cap ~500
+./index.js list-user-collections --user USER
+./index.js get-user --user USER              # profile only
 ./index.js list-story-reviews --story-id STORY_ID
 ./index.js get-node --id NODE_ID
 ```
 
-| Command                 | API                                     | Notes                                                       |
-|-------------------------|-----------------------------------------|-------------------------------------------------------------|
-| `list-user-stories`     | `GET /api/anonkun/userStories/{id}`     | Stories get a derived `url`                                 |
-| `list-user-following`   | `GET /api/anonkun/following/{id}`       |                                                             |
-| `list-user-followers`   | `GET /api/anonkun/followers/{id}`       | Hard cap ~500; `truncated` flag when count ≥ 500            |
-| `list-user-collections` | `GET /api/anonkun/userCollections/{id}` | Includes full `collection` id lists + flattened `story_ids` |
-| `list-story-reviews`    | `GET /api/anonkun/review/{id}`          | Full list (no preview gate)                                 |
-| `get-node`              | `GET /api/node/{id}`                    | Hydrate unknown ids; story nodes include `url`              |
+| Command                 | API                                     | Notes                                                    |
+|-------------------------|-----------------------------------------|----------------------------------------------------------|
+| `list-user-stories`     | `GET /api/anonkun/userStories/{id}`     | Resolves `--user`; stories get a derived `url`           |
+| `list-user-following`   | `GET /api/anonkun/following/{id}`       | Resolves `--user`                                        |
+| `list-user-followers`   | `GET /api/anonkun/followers/{id}`       | Resolves `--user`; hard cap ~500; `truncated` if ≥ 500   |
+| `list-user-collections` | `GET /api/anonkun/userCollections/{id}` | Resolves `--user`; full `collection` lists + `story_ids` |
+| `get-user`              | `GET /api/user/{username\|id}`          | Profile lookup; `found` false on empty body              |
+| `list-story-reviews`    | `GET /api/anonkun/review/{id}`          | Story id only; full list (no preview gate)               |
+| `get-node`              | `GET /api/node/{id}`                    | Hydrate unknown ids; story nodes include `url`           |
 
-Each response is `{ scraped_at, …counts…, data }` where `data` is the raw
-API body (plus normalized `stories` / `users` / `reviews` / `collections`
-arrays when applicable).
+User-list responses include `user_input`, resolved `user_id`, `resolved_from`
+(`username` \| `id`), and `username` when known, plus `{ scraped_at, …counts…,
+data }` (`data` = raw API body; normalized `stories` / `users` / `collections`
+when applicable).
 
 ### Full data archive layout
 
