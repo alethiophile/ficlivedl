@@ -44,12 +44,9 @@ Options:
 
 Hard failures exit with status code 1.
 
-Bulk archives often use `--file-type dir --no-images --no-chat` for chapters,
-then a separate `--chat-only --out TEMP` pass to fill chat later.
-
 ### List stories
 
-Dump the `/stories` board to JSON (for bulk-archive planning):
+Dump the `/stories` board to JSON:
 
 ```
 ./index.js list-stories --out stories.json
@@ -73,6 +70,33 @@ Exit codes for `list-stories`:
 | 2    | No more pages: the first page of this invocation returned board past-end (**404** / **524**). No JSON is written.                                                              |
 
 Story download / `--chat-only` still use only 0 / 1.
+
+### User / review / node helpers
+
+Single-shot public GETs. JSON on stdout (or `--out`); exit 0 on success, 1 on
+error. Shared options: `--delay`, `--user-agent`, `--quiet`/`-q`, `--out`/`-o`.
+
+```
+./index.js list-user-stories --user-id USER_ID
+./index.js list-user-following --user-id USER_ID
+./index.js list-user-followers --user-id USER_ID   # server cap ~500
+./index.js list-user-collections --user-id USER_ID
+./index.js list-story-reviews --story-id STORY_ID
+./index.js get-node --id NODE_ID
+```
+
+| Command                 | API                                     | Notes                                                       |
+|-------------------------|-----------------------------------------|-------------------------------------------------------------|
+| `list-user-stories`     | `GET /api/anonkun/userStories/{id}`     | Stories get a derived `url`                                 |
+| `list-user-following`   | `GET /api/anonkun/following/{id}`       |                                                             |
+| `list-user-followers`   | `GET /api/anonkun/followers/{id}`       | Hard cap ~500; `truncated` flag when count ≥ 500            |
+| `list-user-collections` | `GET /api/anonkun/userCollections/{id}` | Includes full `collection` id lists + flattened `story_ids` |
+| `list-story-reviews`    | `GET /api/anonkun/review/{id}`          | Full list (no preview gate)                                 |
+| `get-node`              | `GET /api/node/{id}`                    | Hydrate unknown ids; story nodes include `url`              |
+
+Each response is `{ scraped_at, …counts…, data }` where `data` is the raw
+API body (plus normalized `stories` / `users` / `reviews` / `collections`
+arrays when applicable).
 
 ### Full data archive layout
 

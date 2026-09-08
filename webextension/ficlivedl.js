@@ -1526,8 +1526,194 @@ async function listStories(opts, funcs) {
     }
 }
 
+/*
+ * Single-shot public GETs for user / review / node discovery.
+ * Each returns { scraped_at, …, data } where data is the raw API body.
+ * No pagination (APIs return one payload; followers hard-cap ~500 server-side).
+ */
+async function get_json_endpoint(url, stage, funcs) {
+    try {
+        funcs.signal_state({ stage: stage, done: 0, total: 1 });
+        let data = await funcs.get_url(url);
+        funcs.signal_state(null);
+        return data;
+    }
+    catch (e) {
+        console.error(e);
+        funcs.signal_state({
+            'error': e && e.message ? e.message : String(e)
+        });
+        throw e;
+    }
+}
+
+function require_id(opts, key) {
+    let id;
+    if (key === 'user_id') {
+        id = opts.user_id || opts.userId || opts.id;
+    }
+    else if (key === 'story_id') {
+        id = opts.story_id || opts.storyId || opts.id;
+    }
+    else if (key === 'node_id') {
+        id = opts.node_id || opts.nodeId || opts.id;
+    }
+    else {
+        id = opts[key];
+    }
+    if (!id || typeof id !== 'string') {
+        throw new Error(key + ' is required (non-empty string)');
+    }
+    return id;
+}
+
+async function listUserStories(opts, funcs) {
+    let user_id = require_id(opts, 'user_id');
+    let data = await get_json_endpoint(
+        `${API_BASE}/api/anonkun/userStories/${user_id}`,
+        'Listing user stories',
+        funcs
+    );
+    let stories = Array.isArray(data) ? data : (data && data.stories) ? data.stories : [];
+    let enriched = stories.map((s) => {
+        let entry = Object.assign({}, s);
+        if (s && s._id) {
+            entry.url = story_page_url(s.t, s._id);
+        }
+        return entry;
+    });
+    return {
+        scraped_at: new Date().toISOString(),
+        user_id: user_id,
+        story_count: enriched.length,
+        stories: enriched,
+        data: data
+    };
+}
+
+async function listUserFollowing(opts, funcs) {
+    let user_id = require_id(opts, 'user_id');
+    let data = await get_json_endpoint(
+        `${API_BASE}/api/anonkun/following/${user_id}`,
+        'Listing following',
+        funcs
+    );
+    let users = Array.isArray(data) ? data : (data && data.users) ? data.users : [];
+    return {
+        scraped_at: new Date().toISOString(),
+        user_id: user_id,
+        user_count: users.length,
+        users: users,
+        data: data
+    };
+}
+
+async function listUserFollowers(opts, funcs) {
+    let user_id = require_id(opts, 'user_id');
+    let data = await get_json_endpoint(
+        `${API_BASE}/api/anonkun/followers/${user_id}`,
+        'Listing followers',
+        funcs
+    );
+    let users = Array.isArray(data) ? data : (data && data.users) ? data.users : [];
+    // Server hard-caps around 500; true count may live on profile stat.follow.
+    return {
+        scraped_at: new Date().toISOString(),
+        user_id: user_id,
+        user_count: users.length,
+        users: users,
+        truncated: users.length >= 500,
+        data: data
+    };
+}
+
+async function listUserCollections(opts, funcs) {
+    let user_id = require_id(opts, 'user_id');
+    let data = await get_json_endpoint(
+        `${API_BASE}/api/anonkun/userCollections/${user_id}`,
+        'Listing user collections',
+        funcs
+    );
+    let collections = Array.isArray(data)
+        ? data
+        : (data && data.collections)
+            ? data.collections
+            : [];
+    let story_ids = [];
+    let seen = new Set();
+    for (let c of collections) {
+        let ids = (c && Array.isArray(c.collection)) ? c.collection : [];
+        for (let sid of ids) {
+            if (sid && !seen.has(sid)) {
+                seen.add(sid);
+                story_ids.push(sid);
+            }
+        }
+    }
+    return {
+        scraped_at: new Date().toISOString(),
+        user_id: user_id,
+        collection_count: collections.length,
+        story_id_count: story_ids.length,
+        story_ids: story_ids,
+        collections: collections,
+        data: data
+    };
+}
+
+async function listStoryReviews(opts, funcs) {
+    let story_id = require_id(opts, 'story_id');
+    let data = await get_json_endpoint(
+        `${API_BASE}/api/anonkun/review/${story_id}`,
+        'Listing story reviews',
+        funcs
+    );
+    let reviews = Array.isArray(data)
+        ? data
+        : (data && data.reviews)
+            ? data.reviews
+            : [];
+    return {
+        scraped_at: new Date().toISOString(),
+        story_id: story_id,
+        review_count: reviews.length,
+        reviews: reviews,
+        data: data
+    };
+}
+
+async function getNode(opts, funcs) {
+    let node_id = require_id(opts, 'node_id');
+    let data = await get_json_endpoint(
+        `${API_BASE}/api/node/${node_id}`,
+        'Fetching node',
+        funcs
+    );
+    let result = {
+        scraped_at: new Date().toISOString(),
+        node_id: node_id,
+        data: data
+    };
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+        result.nt = data.nt;
+        if (data._id) {
+            result._id = data._id;
+        }
+        if (data.nt === 'story' && data.t && data._id) {
+            result.url = story_page_url(data.t, data._id);
+        }
+    }
+    return result;
+}
+
 exports.downloadStory = downloadStory;
 exports.listStories = listStories;
+exports.listUserStories = listUserStories;
+exports.listUserFollowing = listUserFollowing;
+exports.listUserFollowers = listUserFollowers;
+exports.listUserCollections = listUserCollections;
+exports.listStoryReviews = listStoryReviews;
+exports.getNode = getNode;
 exports.apply_filter_key = apply_filter_key;
 exports.build_board_query = build_board_query;
 exports.is_board_eof_error = is_board_eof_error;

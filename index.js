@@ -384,25 +384,173 @@ function build_parser() {
                     console.error(e);
                     process.exit(EXIT_ERROR);
                 }
-                let text = JSON.stringify(result, null, 2);
-                if (argv.out) {
-                    await ensure_parent_dir(argv.out);
-                    await fs.writeFile(argv.out, text, { mode: 0o644 });
-                    if (!quiet) {
-                        console.error(`\nWrote ${argv.out} (${result.story_count} stories)`);
-                    }
-                }
-                else {
-                    if (bar !== null) {
-                        bar.stop();
-                        bar = null;
-                    }
-                    process.stdout.write(text + '\n');
-                }
+                await write_json_result(argv, result, result.story_count + ' stories');
+            }
+        )
+        .command(
+            'list-user-stories',
+            'List stories authored by a user as JSON (GET userStories)',
+            (y) => common_options(y)
+                .option('user-id', {
+                    describe: 'User id',
+                    type: 'string',
+                    demandOption: true
+                })
+                .option('out', {
+                    alias: 'o',
+                    describe: 'Output JSON file (default: stdout)',
+                    type: 'string'
+                }),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.listUserStories({ user_id: argv.userId }, funcs)
+                );
+                await write_json_result(argv, result, result.story_count + ' stories');
+            }
+        )
+        .command(
+            'list-user-following',
+            'List users followed by a user as JSON (GET following)',
+            (y) => common_options(y)
+                .option('user-id', {
+                    describe: 'User id',
+                    type: 'string',
+                    demandOption: true
+                })
+                .option('out', {
+                    alias: 'o',
+                    describe: 'Output JSON file (default: stdout)',
+                    type: 'string'
+                }),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.listUserFollowing({ user_id: argv.userId }, funcs)
+                );
+                await write_json_result(argv, result, result.user_count + ' users');
+            }
+        )
+        .command(
+            'list-user-followers',
+            'List followers of a user as JSON (GET followers; server cap ~500)',
+            (y) => common_options(y)
+                .option('user-id', {
+                    describe: 'User id',
+                    type: 'string',
+                    demandOption: true
+                })
+                .option('out', {
+                    alias: 'o',
+                    describe: 'Output JSON file (default: stdout)',
+                    type: 'string'
+                }),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.listUserFollowers({ user_id: argv.userId }, funcs)
+                );
+                let summary = result.user_count + ' users'
+                    + (result.truncated ? ' (truncated)' : '');
+                await write_json_result(argv, result, summary);
+            }
+        )
+        .command(
+            'list-user-collections',
+            'List a user\'s collections + story id lists as JSON (GET userCollections)',
+            (y) => common_options(y)
+                .option('user-id', {
+                    describe: 'User id',
+                    type: 'string',
+                    demandOption: true
+                })
+                .option('out', {
+                    alias: 'o',
+                    describe: 'Output JSON file (default: stdout)',
+                    type: 'string'
+                }),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.listUserCollections({ user_id: argv.userId }, funcs)
+                );
+                await write_json_result(
+                    argv,
+                    result,
+                    result.collection_count + ' collections, '
+                        + result.story_id_count + ' story ids'
+                );
+            }
+        )
+        .command(
+            'list-story-reviews',
+            'List reviews for a story as JSON (GET review/{storyId})',
+            (y) => common_options(y)
+                .option('story-id', {
+                    describe: 'Story id',
+                    type: 'string',
+                    demandOption: true
+                })
+                .option('out', {
+                    alias: 'o',
+                    describe: 'Output JSON file (default: stdout)',
+                    type: 'string'
+                }),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.listStoryReviews({ story_id: argv.storyId }, funcs)
+                );
+                await write_json_result(argv, result, result.review_count + ' reviews');
+            }
+        )
+        .command(
+            'get-node',
+            'Fetch a node by id as JSON (GET /api/node/{id})',
+            (y) => common_options(y)
+                .option('id', {
+                    describe: 'Node id',
+                    type: 'string',
+                    demandOption: true
+                })
+                .option('out', {
+                    alias: 'o',
+                    describe: 'Output JSON file (default: stdout)',
+                    type: 'string'
+                }),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.getNode({ node_id: argv.id }, funcs)
+                );
+                let summary = result.nt ? ('nt=' + result.nt) : 'node';
+                await write_json_result(argv, result, summary);
             }
         )
         .help()
         .strict();
+}
+
+async function run_list_command(fn) {
+    try {
+        return await fn();
+    }
+    catch (e) {
+        console.error(e);
+        process.exit(EXIT_ERROR);
+    }
+}
+
+async function write_json_result(argv, result, summary) {
+    let text = JSON.stringify(result, null, 2);
+    if (argv.out) {
+        await ensure_parent_dir(argv.out);
+        await fs.writeFile(argv.out, text, { mode: 0o644 });
+        if (!quiet) {
+            console.error(`\nWrote ${argv.out} (${summary})`);
+        }
+    }
+    else {
+        if (bar !== null) {
+            bar.stop();
+            bar = null;
+        }
+        process.stdout.write(text + '\n');
+    }
 }
 
 async function main() {
