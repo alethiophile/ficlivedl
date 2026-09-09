@@ -67,7 +67,7 @@ function ImageRegistry() {
     let claimed_names = new Map(); // localName -> finalUrl
     let cover_url = null;
 
-    function register(url) {
+    function register_one(url) {
         if (!url || typeof url !== 'string') {
             return null;
         }
@@ -95,10 +95,42 @@ function ImageRegistry() {
         return name;
     }
 
+    function register(url) {
+        if (!url || typeof url !== 'string') {
+            return null;
+        }
+        let parts = expand_image_urls(url);
+        if (parts.length === 0) {
+            return null;
+        }
+        let first_name = null;
+        for (let part of parts) {
+            let name = register_one(part);
+            if (name && first_name === null) {
+                first_name = name;
+            }
+        }
+        return first_name;
+    }
+
     function register_cover(url) {
-        let name = register(url);
-        if (name) {
-            cover_url = process_image_url(url);
+        if (!url || typeof url !== 'string') {
+            return null;
+        }
+        let parts = expand_image_urls(url);
+        if (parts.length === 0) {
+            return null;
+        }
+        // Cover is a single image; still register any extra attachments.
+        let name = null;
+        for (let i = 0; i < parts.length; i++) {
+            let n = register_one(parts[i]);
+            if (i === 0) {
+                name = n;
+                if (name) {
+                    cover_url = process_image_url(parts[i]);
+                }
+            }
         }
         return name;
     }
@@ -216,6 +248,17 @@ function json_with_array_content(meta, array_key, array) {
     return Buffer.concat(parts.map(p => Buffer.from(p, 'utf8')));
 }
 
+// Multi-image attachments sometimes arrive as one string joined with
+// the fiction.live delimiter ",newfile," instead of a JSON array.
+function expand_image_urls(url) {
+    if (!url || typeof url !== 'string') {
+        return [];
+    }
+    return url.split(',newfile,').map(function (s) {
+        return s.trim();
+    }).filter(Boolean);
+}
+
 // the fiction.live frontend script does a bunch of manual transforms
 // on the image URLs the API ships out before actually fetching them;
 // this is incredibly stupid but there you go
@@ -224,6 +267,11 @@ function json_with_array_content(meta, array_key, array) {
 function process_image_url(url) {
     if (!url || typeof url !== 'string') {
         return url;
+    }
+    // If a multi-image string slipped through, keep the first URL only.
+    // Callers that need every attachment should use expand_image_urls first.
+    if (url.indexOf(',newfile,') !== -1) {
+        url = expand_image_urls(url)[0] || url;
     }
     if (url.startsWith('//')) {
         url = 'https:' + url;
@@ -274,9 +322,11 @@ function add_image_url(into_set, url) {
     if (!url || typeof url !== 'string') {
         return;
     }
-    let u = process_image_url(url);
-    if (u) {
-        into_set.add(u);
+    for (let part of expand_image_urls(url)) {
+        let u = process_image_url(part);
+        if (u) {
+            into_set.add(u);
+        }
     }
 }
 
@@ -395,13 +445,33 @@ function Story(opts, funcs) {
                     if (src === undefined) {
                         return;
                     }
-                    let name = image_registry.register(src);
-                    if (!name) {
+                    // fiction.live sometimes puts multi-attach URLs in one
+                    // src joined with ",newfile," (broken on the live site).
+                    // Expand to sibling <img>s in our rendered HTML only;
+                    // chapters.json keeps the original body string.
+                    let parts = expand_image_urls(src);
+                    if (parts.length === 0) {
                         return;
                     }
-                    let final_url = process_image_url(src);
-                    images.push(final_url);
-                    $this.attr('src', '../images/' + name);
+                    let last = $this;
+                    for (let i = 0; i < parts.length; i++) {
+                        let name = image_registry.register(parts[i]);
+                        if (!name) {
+                            continue;
+                        }
+                        let final_url = process_image_url(parts[i]);
+                        images.push(final_url);
+                        let local_src = '../images/' + name;
+                        if (i === 0) {
+                            $this.attr('src', local_src);
+                            last = $this;
+                        }
+                        else {
+                            let $extra = $this.clone().attr('src', local_src);
+                            last.after($extra);
+                            last = $extra;
+                        }
+                    }
                 });
                 if (opts.download_images) {
                     $dom.find('figure').find('img').unwrap();
@@ -1819,4 +1889,5 @@ exports.BOARD_EOF_HTTP_STATUSES = BOARD_EOF_HTTP_STATUSES;
 exports.Story = Story;
 exports.encode_form = encode_form;
 exports.process_image_url = process_image_url;
+exports.expand_image_urls = expand_image_urls;
 exports.story_page_url = story_page_url;
