@@ -40,9 +40,35 @@ Options:
   Implies no image binaries. Writes `chat/`, `topics/`, and a partial
   `images.json` (URLs from chat/topics only). Conflicts with `--no-chat`.
   Pure producer: does not read or merge an existing story directory.
-- `--quiet` / `-q` — suppress progress and status messages (errors still print)
+- `--quiet` / `-q` — suppress progress and status messages (errors still emit)
+- `--json-lines` / `-J` — machine-readable progress on stderr (see below)
 
 Hard failures exit with status code 1.
+
+### JSON lines mode (`--json-lines` / `-J`)
+
+Instead of `cli-progress` bars and free-form status text, every
+progress/status/error event is one NDJSON object per line on **stderr**. Result
+payloads are unchanged (`--out` file or pretty JSON on stdout).
+
+| `type`     | When                        | Main fields                                      |
+|------------|-----------------------------|--------------------------------------------------|
+| `progress` | `signal_state` ticks        | `stage`, optional `done` / `total` / `title`     |
+| `status`   | “Found story”, “Wrote …”, … | `message`, optional `path` / `files` / `summary` |
+| `error`    | Failures                    | `message`, optional `stack` (single JSON string) |
+| `done`     | Stage finished / cleared    | (none)                                           |
+
+Example:
+
+```json
+{"type":"progress","stage":"Fetching chapters","done":3,"total":12,"title":"Story"}
+{"type":"error","message":"HTTP 503 for GET https://…","stack":"Error: …\n    at …"}
+{"type":"done"}
+```
+
+With `-J`, multi-line raw `console.error` stacks are not used; stacks ride
+inside the `error` event. `-q` still suppresses `progress` / `status` but
+**always** emits `error` (and exit codes stay the same).
 
 ### List stories
 
@@ -56,8 +82,7 @@ Dump the `/stories` board to JSON:
 Options: `--out`/`-o`, `--start-page`, `--end-page`, `--sort`
 (`new|active|hot|chapter|replies|like`), `--board` (default `stories`),
 `--filter-key` (`all` or axis partition `rating:…` / `length:…` /
-`status:…`), `--delay`, `--user-agent`, `--quiet`/`-q` (progress off;
-JSON on stdout unchanged).
+`status:…`), `--delay`, `--user-agent`, `--quiet`/`-q`, `--json-lines`/`-J`.
 
 Each story object is the raw API payload plus a derived `url`.
 
@@ -74,7 +99,8 @@ Story download / `--chat-only` still use only 0 / 1.
 ### User / review / node helpers
 
 Single-shot public GETs. JSON on stdout (or `--out`); exit 0 on success, 1 on
-error. Shared options: `--delay`, `--user-agent`, `--quiet`/`-q`, `--out`/`-o`.
+error. Shared options: `--delay`, `--user-agent`, `--quiet`/`-q`,
+`--json-lines`/`-J`, `--out`/`-o`.
 
 User list commands take **`--user`** (alias **`--user-id`**): a **username or
 user id**. Resolution: `GET /api/user/{token}` first (case-sensitive). Non-empty

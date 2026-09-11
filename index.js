@@ -12,6 +12,7 @@ let current_stage = null;
 let title_shown = false;
 let bar = null;
 let quiet = false;
+let json_lines = false;
 let out_path = null;
 // let user_agent = 'ficlivedl/0.2 (+https://github.com/alethiophile/ficlivedl)';
 let user_agent = '';
@@ -21,6 +22,124 @@ let download_failed = false;
 const EXIT_OK = 0;
 const EXIT_ERROR = 1;
 const EXIT_NO_MORE_PAGES = 2;
+
+function error_message(e) {
+    if (e == null) {
+        return String(e);
+    }
+    if (typeof e === 'string') {
+        return e;
+    }
+    if (e.message) {
+        return e.message;
+    }
+    if (typeof e.statusCode === 'number') {
+        return 'HTTP ' + e.statusCode;
+    }
+    return String(e);
+}
+
+function error_stack(e) {
+    if (e && typeof e.stack === 'string' && e.stack) {
+        return e.stack;
+    }
+    return undefined;
+}
+
+function emit_json(obj) {
+    console.error(JSON.stringify(obj));
+}
+
+function emit_error(message, stack) {
+    download_failed = true;
+    let msg = message == null ? '' : String(message);
+    if (json_lines) {
+        let ev = { type: 'error', message: msg };
+        if (stack) {
+            ev.stack = String(stack);
+        }
+        emit_json(ev);
+        return;
+    }
+    // Human mode: prefer full stack when present (includes message).
+    if (stack) {
+        console.error(stack);
+    }
+    else {
+        console.error(msg);
+    }
+}
+
+function emit_error_from_exception(e) {
+    emit_error(error_message(e), error_stack(e));
+}
+
+function emit_status(message, extra) {
+    if (quiet) {
+        return;
+    }
+    let msg = message == null ? '' : String(message);
+    if (json_lines) {
+        let ev = Object.assign({ type: 'status', message: msg }, extra || {});
+        emit_json(ev);
+        return;
+    }
+    console.error(msg);
+}
+
+function emit_done() {
+    if (json_lines) {
+        emit_json({ type: 'done' });
+    }
+    if (bar !== null) {
+        bar.stop();
+        bar = null;
+    }
+    current_stage = null;
+}
+
+function emit_progress_state(state) {
+    if (json_lines) {
+        if (quiet) {
+            return;
+        }
+        let ev = { type: 'progress' };
+        if (state.stage !== undefined) {
+            ev.stage = state.stage;
+        }
+        if (state.done !== undefined) {
+            ev.done = state.done;
+        }
+        if (state.total !== undefined) {
+            ev.total = state.total;
+        }
+        if (state.title !== undefined) {
+            ev.title = state.title;
+        }
+        emit_json(ev);
+        return;
+    }
+    if (quiet) {
+        return;
+    }
+    if (current_stage !== state.stage) {
+        if (bar !== null) {
+            bar.stop();
+            bar = null;
+        }
+        console.error('\n' + state.stage);
+        current_stage = state.stage;
+        if (state.total) {
+            bar = new progress.Bar({
+                stream: process.stderr
+            });
+            bar.start(state.total, state.done || 0);
+        }
+    }
+    if (bar !== null && state.done !== undefined) {
+        bar.update(state.done);
+    }
+}
 
 function request_promise(url, options = {}) {
     let method = options.method || 'GET';
@@ -116,41 +235,23 @@ async function ensure_parent_dir(file_path) {
 let funcs = {
     signal_state: function (state) {
         if (state === null) {
-            if (bar !== null) {
-                bar.stop();
-                bar = null;
-            }
+            emit_done();
             return;
         }
         if (state.error) {
-            download_failed = true;
-            console.error(state.error);
+            emit_error(state.error, state.stack);
             return;
         }
-        if (quiet) {
-            return;
-        }
-        if (!title_shown && state.title) {
-            console.error(`Found story: ${state.title}\n`);
+        if (!json_lines && !quiet && !title_shown && state.title) {
+            // Human "Found story" is separate from progress ticks.
             title_shown = true;
+            console.error(`Found story: ${state.title}\n`);
         }
-        if (current_stage !== state.stage) {
-            if (bar !== null) {
-                bar.stop();
-                bar = null;
-            }
-            console.error("\n" + state.stage);
-            current_stage = state.stage;
-            if (state.total) {
-                bar = new progress.Bar({
-                    stream: process.stderr
-                });
-                bar.start(state.total, state.done || 0);
-            }
+        else if (json_lines && !quiet && !title_shown && state.title) {
+            title_shown = true;
+            emit_status('Found story: ' + state.title, { title: state.title });
         }
-        if (bar !== null && state.done !== undefined) {
-            bar.update(state.done);
-        }
+        emit_progress_state(state);
     },
     save_file: async function (name, data) {
         let dest = out_path || name;
@@ -158,9 +259,7 @@ let funcs = {
         await fs.writeFile(dest, data, {
             mode: 0o644,
         });
-        if (!quiet) {
-            console.error(`\nWrote ${dest}`);
-        }
+        emit_status('Wrote ' + dest, { path: dest });
     },
     save_dir: async function (name, files) {
         let dest = out_path || name;
@@ -180,9 +279,10 @@ let funcs = {
                 await fs.writeFile(full, Buffer.from(content), { mode: 0o644 });
             }
         }
-        if (!quiet) {
-            console.error(`\nWrote directory ${dest} (${files.length} files)`);
-        }
+        emit_status(
+            'Wrote directory ' + dest + ' (' + files.length + ' files)',
+            { path: dest, files: files.length }
+        );
     },
     get_url: async function (url, image = false) {
         return request_promise(url, { method: 'GET', json: !image, image: image });
@@ -245,10 +345,21 @@ function build_parser() {
             alias: 'q',
             type: 'boolean',
             default: false,
-            describe: 'Suppress progress and status messages (JSON on stdout still printed)'
+            describe:
+                'Suppress progress and status messages (errors still emitted; '
+                + 'JSON on stdout still printed)'
+        })
+        .option('json-lines', {
+            alias: 'J',
+            type: 'boolean',
+            default: false,
+            describe:
+                'Emit progress/status/error as NDJSON on stderr (no progress bars; '
+                + 'for machine consumers such as ficlive-archive)'
         })
         .middleware((argv) => {
             quiet = !!argv.quiet;
+            json_lines = !!argv.jsonLines;
             if (argv.userAgent) {
                 user_agent = argv.userAgent;
             }
@@ -256,6 +367,10 @@ function build_parser() {
             title_shown = false;
             current_stage = null;
             out_path = argv.out || null;
+            if (bar !== null) {
+                bar.stop();
+                bar = null;
+            }
         })
         .command(
             '$0 [url]',
@@ -293,17 +408,17 @@ function build_parser() {
             async (argv) => {
                 let url = argv.url || (argv._ && argv._[0]);
                 if (!url || typeof url !== 'string' || !url.startsWith('http')) {
-                    console.error('You must provide a story URL');
-                    process.exit(1);
+                    emit_error('You must provide a story URL');
+                    process.exit(EXIT_ERROR);
                 }
                 if (argv.chatOnly) {
                     if (!argv.out) {
-                        console.error('--chat-only requires --out (directory)');
-                        process.exit(1);
+                        emit_error('--chat-only requires --out (directory)');
+                        process.exit(EXIT_ERROR);
                     }
                     if (argv.chat === false) {
-                        console.error('--chat-only conflicts with --no-chat');
-                        process.exit(1);
+                        emit_error('--chat-only conflicts with --no-chat');
+                        process.exit(EXIT_ERROR);
                     }
                     let opts = {
                         url: url,
@@ -320,7 +435,10 @@ function build_parser() {
                         funcs.signal_state(null);
                     }
                     catch (e) {
-                        download_failed = true;
+                        // downloadStory path signals error itself; chat-only may not.
+                        if (!download_failed) {
+                            emit_error_from_exception(e);
+                        }
                     }
                 }
                 else {
@@ -337,11 +455,14 @@ function build_parser() {
                         await ficlivedl.downloadStory(opts, funcs);
                     }
                     catch (e) {
-                        download_failed = true;
+                        // Library usually signal_state({error}); ensure we never stay silent.
+                        if (!download_failed) {
+                            emit_error_from_exception(e);
+                        }
                     }
                 }
                 if (download_failed) {
-                    process.exit(1);
+                    process.exit(EXIT_ERROR);
                 }
             }
         )
@@ -393,15 +514,14 @@ function build_parser() {
                     }, funcs);
                 }
                 catch (e) {
-                    let msg = (e && e.message) ? e.message : String(e);
+                    // listStories already signal_state({error}); emit only if not.
+                    if (!download_failed) {
+                        emit_error_from_exception(e);
+                    }
                     if (ficlivedl.is_board_eof_error(e)) {
                         // First page of this invocation was past end; no JSON.
-                        if (!quiet) {
-                            console.error(msg);
-                        }
                         process.exit(EXIT_NO_MORE_PAGES);
                     }
-                    console.error(e);
                     process.exit(EXIT_ERROR);
                 }
                 await write_json_result(argv, result, result.story_count + ' stories');
@@ -536,7 +656,10 @@ async function run_list_command(fn) {
         return await fn();
     }
     catch (e) {
-        console.error(e);
+        // Library may already have signal_state({error}); avoid duplicate emit.
+        if (!download_failed) {
+            emit_error_from_exception(e);
+        }
         process.exit(EXIT_ERROR);
     }
 }
@@ -546,9 +669,10 @@ async function write_json_result(argv, result, summary) {
     if (argv.out) {
         await ensure_parent_dir(argv.out);
         await fs.writeFile(argv.out, text, { mode: 0o644 });
-        if (!quiet) {
-            console.error(`\nWrote ${argv.out} (${summary})`);
-        }
+        emit_status('Wrote ' + argv.out + ' (' + summary + ')', {
+            path: argv.out,
+            summary: summary
+        });
     }
     else {
         if (bar !== null) {
@@ -565,6 +689,6 @@ async function main() {
 }
 
 main().catch((e) => {
-    console.error(e);
+    emit_error_from_exception(e);
     process.exit(EXIT_ERROR);
 });

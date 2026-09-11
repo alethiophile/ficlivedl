@@ -1403,7 +1403,6 @@ async function downloadStory(opts, funcs) {
         funcs.signal_state(null);
     }
     catch (e) {
-        console.error(e);
         let msg;
         if (e && e.message) {
             msg = e.message;
@@ -1411,10 +1410,17 @@ async function downloadStory(opts, funcs) {
         else if (e && typeof e.status === 'number') {
             msg = 'HTTP ' + e.status + (e.responseURL ? ' ' + e.responseURL : '');
         }
+        else if (e && typeof e.statusCode === 'number') {
+            msg = e.message || ('HTTP ' + e.statusCode);
+        }
         else {
             msg = String(e);
         }
-        funcs.signal_state({ 'error': msg });
+        let err_ev = { 'error': msg };
+        if (e && typeof e.stack === 'string' && e.stack) {
+            err_ev.stack = e.stack;
+        }
+        funcs.signal_state(err_ev);
         throw e;
     }
 }
@@ -1588,10 +1594,13 @@ async function listStories(opts, funcs) {
         return result;
     }
     catch (e) {
-        console.error(e);
-        funcs.signal_state({
+        let err_ev = {
             'error': e && e.message ? e.message : String(e)
-        });
+        };
+        if (e && typeof e.stack === 'string' && e.stack) {
+            err_ev.stack = e.stack;
+        }
+        funcs.signal_state(err_ev);
         throw e;
     }
 }
@@ -1613,10 +1622,13 @@ async function get_json_endpoint(url, stage, funcs) {
         return data;
     }
     catch (e) {
-        console.error(e);
-        funcs.signal_state({
+        let err_ev = {
             'error': e && e.message ? e.message : String(e)
-        });
+        };
+        if (e && typeof e.stack === 'string' && e.stack) {
+            err_ev.stack = e.stack;
+        }
+        funcs.signal_state(err_ev);
         throw e;
     }
 }
