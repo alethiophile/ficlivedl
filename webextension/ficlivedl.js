@@ -580,7 +580,28 @@ function Story(opts, funcs) {
         return nodeId;
     }
 
+    function date_from_ms() {
+        for (let i = 0; i < arguments.length; i++) {
+            let v = arguments[i];
+            if (v == null || v === '') {
+                continue;
+            }
+            let ms = typeof v === 'number' ? v : Number(v);
+            if (!Number.isFinite(ms)) {
+                continue;
+            }
+            let d = new Date(ms);
+            if (Number.isFinite(d.getTime())) {
+                return d;
+            }
+        }
+        return null;
+    }
+
     function format_date(d) {
+        if (!d || !Number.isFinite(d.getTime())) {
+            return 'Unknown';
+        }
         return new Intl.DateTimeFormat('en-US', {
             dateStyle: 'medium', timeStyle: 'long',
             timeZone: 'UTC', hour12: false
@@ -653,10 +674,14 @@ function Story(opts, funcs) {
             return this.chapters.map(c => c.words).reduce((a, b) => a + b, 0);
         },
         date_published: function () {
-            return new Date(this.node_metadata.ct);
+            return date_from_ms(this.node_metadata.ct, this.node_metadata.ut);
         },
         date_updated: function () {
-            return new Date(this.node_metadata.cht);
+            return date_from_ms(
+                this.node_metadata.cht,
+                this.node_metadata.ut,
+                this.node_metadata.ct
+            );
         },
         set_chapter_urls: function () {
             if (this.node_metadata === null) {
@@ -1159,6 +1184,7 @@ ${desc}
                 'title': this.title(),
                 'stage': 'Generating ePUB file',
             });
+            let pub_date = this.date_published();
             let metadata = {
                 id: `anonkun:${this.node_id}`,
                 cover: this.cover,
@@ -1168,8 +1194,10 @@ ${desc}
                 description: this.node_metadata.d,
                 source: this.story_url(),
                 images: this.story_images,
-                published: this.date_published().toISOString(),
             };
+            if (pub_date) {
+                metadata.published = pub_date.toISOString();
+            }
             let epub = nodepub.document(metadata);
             epub.addSection('Title Page', this.make_title_page());
             for (let c of this.chapters) {
