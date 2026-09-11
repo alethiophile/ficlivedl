@@ -213,7 +213,10 @@ function fix_html_tags(html) {
 }
 
 function escape_html(txt) {
-    return txt
+    if (txt == null) {
+        return '';
+    }
+    return String(txt)
          .replace(/&/g, "&amp;")
          .replace(/</g, "&lt;")
          .replace(/>/g, "&gt;")
