@@ -408,7 +408,7 @@ function Story(opts, funcs) {
     let post_url = funcs.post_url;
     let image_registry = ImageRegistry();
     function chapter_url(story_id, start, end) {
-        return `${API_BASE}/api/anonkun/chapters/${story_id}/${start}/${end}`;
+        return `${API_BASE}/api/anonkun/chapters/${encodeURIComponent(story_id)}/${start}/${end}`;
     }
 
     function sanitize_chapter_html(html) {
@@ -574,13 +574,18 @@ function Story(opts, funcs) {
     }
 
     function get_node_id(url) {
-        const storyUrlRe = new RegExp('^https://fiction.live/stories/[^/]+/(\\w+)/?');
+        // Path segment may start with '-' (Meteor-style ids); \w alone rejects those.
+        const storyUrlRe = new RegExp('^https://fiction.live/stories/[^/]+/([^/?#]+)/?');
         let res = url.match(storyUrlRe);
         if (res === null) {
             return;
         }
-        let nodeId = res[1];
-        return nodeId;
+        try {
+            return decodeURIComponent(res[1]);
+        }
+        catch (e) {
+            return res[1];
+        }
     }
 
     function date_from_ms() {
@@ -637,15 +642,26 @@ function Story(opts, funcs) {
         cover_name: null,
         // This method returns this story's node URL in the API
         node_url: function () {
-            return `${API_BASE}/api/node/${this.node_id}`;
+            return `${API_BASE}/api/node/${encodeURIComponent(this.node_id)}`;
         },
         // This method downloads the node info, returning a promise
         download_node: function () {
+            if (!this.node_id) {
+                throw new Error(
+                    'Could not parse story id from URL: ' + (opts.url || '')
+                );
+            }
             let url = this.node_url();
             signal_state({ 'stage': 'Getting metadata' });
             return get_url(url).then((data) => {
                 if (!data || typeof data !== 'object' || !data._id) {
                     throw new Error('Story node not found or empty response');
+                }
+                if (String(data._id) !== String(this.node_id)) {
+                    throw new Error(
+                        'Story node id mismatch: expected '
+                        + this.node_id + ', got ' + data._id
+                    );
                 }
                 this.node_metadata = data;
                 if (opts.download_type !== 'metadata') {
@@ -666,7 +682,17 @@ function Story(opts, funcs) {
             return this.node_metadata.t;
         },
         author: function () {
-            return this.node_metadata.u[0].n;
+            let users = this.node_metadata && this.node_metadata.u;
+            if (!Array.isArray(users)) {
+                return 'Unknown';
+            }
+            for (let i = 0; i < users.length; i++) {
+                let u = users[i];
+                if (u && typeof u.n === 'string' && u.n.trim() !== '') {
+                    return u.n;
+                }
+            }
+            return 'Unknown';
         },
         tags: function () {
             let ta = this.node_metadata.ta || [];
@@ -777,7 +803,7 @@ function Story(opts, funcs) {
             //     'stage': stage_label
             // });
             let latest = await fetch_with_retry(
-                () => get_url(`${API_BASE}/api/chat/${room_id}/latest`),
+                () => get_url(`${API_BASE}/api/chat/${encodeURIComponent(room_id)}/latest`),
                 delay
             );
             if (!Array.isArray(latest) || latest.length === 0) {
@@ -883,7 +909,7 @@ function Story(opts, funcs) {
             });
 
             let pages_info = await fetch_with_retry(
-                () => get_url(`${API_BASE}/api/thread/${story_id}/pages`),
+                () => get_url(`${API_BASE}/api/thread/${encodeURIComponent(story_id)}/pages`),
                 delay
             );
             let topic_count = (pages_info && pages_info.count) ? pages_info.count : 0;
@@ -901,7 +927,7 @@ function Story(opts, funcs) {
                     'total': page_count
                 });
                 let batch = await fetch_with_retry(
-                    () => get_url(`${API_BASE}/api/thread/${story_id}/${page}/${TOPIC_PAGE_SIZE}`),
+                    () => get_url(`${API_BASE}/api/thread/${encodeURIComponent(story_id)}/${page}/${TOPIC_PAGE_SIZE}`),
                     delay
                 );
                 if (!Array.isArray(batch) || batch.length === 0) {
@@ -932,7 +958,7 @@ function Story(opts, funcs) {
                 let node = topic;
                 try {
                     node = await fetch_with_retry(
-                        () => get_url(`${API_BASE}/api/node/${topic_id}`),
+                        () => get_url(`${API_BASE}/api/node/${encodeURIComponent(topic_id)}`),
                         delay
                     );
                 }
@@ -1873,7 +1899,7 @@ async function listUserCollections(opts, funcs) {
 async function listStoryReviews(opts, funcs) {
     let story_id = require_id(opts, 'story_id');
     let data = await get_json_endpoint(
-        `${API_BASE}/api/anonkun/review/${story_id}`,
+        `${API_BASE}/api/anonkun/review/${encodeURIComponent(story_id)}`,
         'Listing story reviews',
         funcs
     );
@@ -1894,7 +1920,7 @@ async function listStoryReviews(opts, funcs) {
 async function getNode(opts, funcs) {
     let node_id = require_id(opts, 'node_id');
     let data = await get_json_endpoint(
-        `${API_BASE}/api/node/${node_id}`,
+        `${API_BASE}/api/node/${encodeURIComponent(node_id)}`,
         'Fetching node',
         funcs
     );
