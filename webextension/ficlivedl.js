@@ -1690,6 +1690,25 @@ async function get_json_endpoint(url, stage, funcs) {
     }
 }
 
+async function post_json_endpoint(url, fields, stage, funcs) {
+    try {
+        funcs.signal_state({ stage: stage, done: 0, total: 1 });
+        let data = await funcs.post_url(url, fields || {});
+        funcs.signal_state(null);
+        return data;
+    }
+    catch (e) {
+        let err_ev = {
+            'error': e && e.message ? e.message : String(e)
+        };
+        if (e && typeof e.stack === 'string' && e.stack) {
+            err_ev.stack = e.stack;
+        }
+        funcs.signal_state(err_ev);
+        throw e;
+    }
+}
+
 function require_id(opts, key) {
     let id;
     if (key === 'user_id') {
@@ -1917,6 +1936,54 @@ async function listStoryReviews(opts, funcs) {
     };
 }
 
+/*
+ * Main site reviews feed: POST /api/anonkun/filteredReviews.
+ * Cursor lastCT (ms) is inclusive; omit for newest page. Past-end → empty lists.
+ * page alone does not paginate; lastCT is the real cursor.
+ */
+async function listReviews(opts, funcs) {
+    let body = {};
+    let last_ct = opts.last_ct != null ? opts.last_ct
+        : (opts.lastCt != null ? opts.lastCt : null);
+    if (last_ct !== null && last_ct !== undefined && last_ct !== '') {
+        let n = Number(last_ct);
+        if (!Number.isFinite(n)) {
+            throw new Error('last_ct must be a finite number (ms timestamp)');
+        }
+        body.lastCT = n;
+    }
+    if (opts.page != null && opts.page !== '') {
+        let p = Number(opts.page);
+        if (!Number.isFinite(p) || p < 1) {
+            throw new Error('page must be a positive number');
+        }
+        body.page = p;
+    }
+    let data = await post_json_endpoint(
+        `${API_BASE}/api/anonkun/filteredReviews`,
+        body,
+        'Listing reviews feed',
+        funcs
+    );
+    let reviews = Array.isArray(data)
+        ? data
+        : (data && Array.isArray(data.reviews))
+            ? data.reviews
+            : [];
+    let stories = (data && Array.isArray(data.stories))
+        ? data.stories
+        : [];
+    return {
+        scraped_at: new Date().toISOString(),
+        last_ct: body.lastCT != null ? body.lastCT : null,
+        review_count: reviews.length,
+        reviews: reviews,
+        story_count: stories.length,
+        stories: stories,
+        data: data
+    };
+}
+
 async function getNode(opts, funcs) {
     let node_id = require_id(opts, 'node_id');
     let data = await get_json_endpoint(
@@ -1948,6 +2015,7 @@ exports.listUserFollowing = listUserFollowing;
 exports.listUserFollowers = listUserFollowers;
 exports.listUserCollections = listUserCollections;
 exports.listStoryReviews = listStoryReviews;
+exports.listReviews = listReviews;
 exports.getNode = getNode;
 exports.getUserProfile = getUserProfile;
 exports.resolve_user_id = resolve_user_id;

@@ -626,6 +626,35 @@ function build_parser() {
             }
         )
         .command(
+            'list-reviews',
+            'List main site reviews feed as JSON (POST filteredReviews)',
+            (y) => common_options(y)
+                .option('last-ct', {
+                    describe:
+                        'Cursor: reviews with ut <= this ms timestamp '
+                        + '(omit for newest page; inclusive)',
+                    type: 'number'
+                })
+                .option('out', {
+                    alias: 'o',
+                    describe: 'Output JSON file (default: stdout)',
+                    type: 'string'
+                }),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.listReviews(
+                        { last_ct: argv.lastCt },
+                        funcs
+                    )
+                );
+                await write_json_result(
+                    argv,
+                    result,
+                    result.review_count + ' reviews / ' + result.story_count + ' stories'
+                );
+            }
+        )
+        .command(
             'get-node',
             'Fetch a node by id as JSON (GET /api/node/{id})',
             (y) => common_options(y)

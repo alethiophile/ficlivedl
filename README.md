@@ -98,9 +98,9 @@ Story download / `--chat-only` still use only 0 / 1.
 
 ### User / review / node helpers
 
-Single-shot public GETs. JSON on stdout (or `--out`); exit 0 on success, 1 on
-error. Shared options: `--delay`, `--user-agent`, `--quiet`/`-q`,
-`--json-lines`/`-J`, `--out`/`-o`.
+Single-shot public list/get helpers (mostly GET; `list-reviews` is POST).
+JSON on stdout (or `--out`); exit 0 on success, 1 on error. Shared options:
+`--delay`, `--user-agent`, `--quiet`/`-q`, `--json-lines`/`-J`, `--out`/`-o`.
 
 User list commands take **`--user`** (alias **`--user-id`**): a **username or
 user id**. Resolution: `GET /api/user/{token}` first (case-sensitive). Non-empty
@@ -115,6 +115,8 @@ only accept ids; usernames must be resolved this way.
 ./index.js list-user-collections --user USER
 ./index.js get-user --user USER              # profile only
 ./index.js list-story-reviews --story-id STORY_ID
+./index.js list-reviews                     # newest page
+./index.js list-reviews --last-ct MS        # page with ut <= MS (inclusive)
 ./index.js get-node --id NODE_ID
 ```
 
@@ -126,6 +128,7 @@ only accept ids; usernames must be resolved this way.
 | `list-user-collections` | `GET /api/anonkun/userCollections/{id}` | Resolves `--user`; full `collection` lists + `story_ids` |
 | `get-user`              | `GET /api/user/{username\|id}`          | Profile lookup; `found` false on empty body              |
 | `list-story-reviews`    | `GET /api/anonkun/review/{id}`          | Story id only; full list (no preview gate)               |
+| `list-reviews`          | `POST /api/anonkun/filteredReviews`     | Main feed; optional `--last-ct` ms cursor (inclusive)    |
 | `get-node`              | `GET /api/node/{id}`                    | Hydrate unknown ids; story nodes include `url`           |
 
 User-list responses include `user_input`, resolved `user_id`, `resolved_from`
