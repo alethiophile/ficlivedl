@@ -113,6 +113,7 @@ only accept ids; usernames must be resolved this way.
 ./index.js list-user-following --user USER
 ./index.js list-user-followers --user USER   # server cap ~500
 ./index.js list-user-collections --user USER
+./index.js list-user-achievements --user USER # all pages (10/page)
 ./index.js get-user --user USER              # profile only
 ./index.js list-story-reviews --story-id STORY_ID
 ./index.js list-reviews                     # newest page
@@ -126,6 +127,7 @@ only accept ids; usernames must be resolved this way.
 | `list-user-following`   | `GET /api/anonkun/following/{id}`       | Resolves `--user`                                        |
 | `list-user-followers`   | `GET /api/anonkun/followers/{id}`       | Resolves `--user`; hard cap ~500; `truncated` if ≥ 500   |
 | `list-user-collections` | `GET /api/anonkun/userCollections/{id}` | Resolves `--user`; full `collection` lists + `story_ids` |
+| `list-user-achievements` | `GET /api/profile/achievements/{id}/{page}` | Resolves `--user`; loops pages until empty (10/page)     |
 | `get-user`              | `GET /api/user/{username\|id}`          | Profile lookup; `found` false on empty body              |
 | `list-story-reviews`    | `GET /api/anonkun/review/{id}`          | Story id only; full list (no preview gate)               |
 | `list-reviews`          | `POST /api/anonkun/filteredReviews`     | Main feed; optional `--last-ct` ms cursor (inclusive)    |
@@ -134,7 +136,7 @@ only accept ids; usernames must be resolved this way.
 User-list responses include `user_input`, resolved `user_id`, `resolved_from`
 (`username` \| `id`), and `username` when known, plus `{ scraped_at, …counts…,
 data }` (`data` = raw API body; normalized `stories` / `users` / `collections`
-when applicable).
+/ `entries` when applicable).
 
 ### Full data archive layout
 

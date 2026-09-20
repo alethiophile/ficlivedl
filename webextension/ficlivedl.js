@@ -987,6 +987,22 @@ function Story(opts, funcs) {
                 topics: topics
             };
         },
+        // Achievement definition icons (node.achievements.achievements
+        // maps id -> {t, d, i: [url]}) into the image registry.
+        collect_achievement_images: function () {
+            if (!this.node_metadata
+                || !this.node_metadata.achievements
+                || !this.node_metadata.achievements.achievements) {
+                return;
+            }
+            let urls = new Set();
+            for (let ach of Object.values(this.node_metadata.achievements.achievements)) {
+                collect_images_from_node(ach, urls);
+            }
+            for (let u of urls) {
+                this.image_registry.register(u);
+            }
+        },
         collect_extra_images: function () {
             let urls = new Set();
             if (this.chat_archive) {
@@ -1004,6 +1020,7 @@ function Story(opts, funcs) {
             for (let u of urls) {
                 this.image_registry.register(u);
             }
+            this.collect_achievement_images();
             if (this.node_metadata && this.node_metadata.i && this.node_metadata.i[0]) {
                 this.image_registry.register_cover(this.node_metadata.i[0]);
             }
@@ -1427,8 +1444,10 @@ async function downloadStory(opts, funcs) {
             }
             else {
                 // Chapter imgs already registered in process_html; cover for
-                // images.json naming when chat/topics are skipped.
+                // images.json naming when chat/topics are skipped. Achievement
+                // icons don't depend on chat, so collect them here too.
                 story.ensure_cover_registered();
+                story.collect_achievement_images();
             }
         }
         else {
@@ -1915,6 +1934,44 @@ async function listUserCollections(opts, funcs) {
     });
 }
 
+/*
+ * User achievements, all pages: GET /api/profile/achievements/{userId}/{page}.
+ * Page size is server-fixed (10 entries); past-end returns an empty array.
+ * Each record: { _id: "{userId}_{storyId}", achievements: {id: {t, d, i}},
+ * ct: {id: ms}, node: { _id, t, ut, u, i } } — node is a minimal story stub.
+ */
+async function listUserAchievements(opts, funcs) {
+    let resolved = await resolve_user_id(opts, funcs);
+    let user_id = resolved.user_id;
+    let delay = opts.download_delay || 0;
+    let all = [];
+    let page = 1;
+    while (true) {
+        let data = await get_json_endpoint(
+            `${API_BASE}/api/profile/achievements/`
+                + `${encodeURIComponent(user_id)}/${page}`,
+            'Listing user achievements',
+            funcs
+        );
+        let entries = Array.isArray(data) ? data : [];
+        if (entries.length === 0) {
+            break;
+        }
+        all.push(...entries);
+        if (delay > 0) {
+            await funcs.wait(delay);
+        }
+        page += 1;
+    }
+    return Object.assign(user_envelope_fields(resolved), {
+        scraped_at: new Date().toISOString(),
+        page_count: page - 1,
+        entry_count: all.length,
+        entries: all,
+        data: all
+    });
+}
+
 async function listStoryReviews(opts, funcs) {
     let story_id = require_id(opts, 'story_id');
     let data = await get_json_endpoint(
@@ -2014,6 +2071,7 @@ exports.listUserStories = listUserStories;
 exports.listUserFollowing = listUserFollowing;
 exports.listUserFollowers = listUserFollowers;
 exports.listUserCollections = listUserCollections;
+exports.listUserAchievements = listUserAchievements;
 exports.listStoryReviews = listStoryReviews;
 exports.listReviews = listReviews;
 exports.getNode = getNode;

@@ -605,6 +605,26 @@ function build_parser() {
             }
         )
         .command(
+            'list-user-achievements',
+            'List a user\'s achievements, all pages, as JSON '
+                + '(GET profile/achievements/{id}/{page})',
+            (y) => user_list_options(y),
+            async (argv) => {
+                let result = await run_list_command(() =>
+                    ficlivedl.listUserAchievements({
+                        user: user_arg(argv),
+                        download_delay: argv.delay
+                    }, funcs)
+                );
+                await write_json_result(
+                    argv,
+                    result,
+                    result.entry_count + ' entries / '
+                        + result.page_count + ' pages'
+                );
+            }
+        )
+        .command(
             'list-story-reviews',
             'List reviews for a story as JSON (GET review/{storyId})',
             (y) => common_options(y)
