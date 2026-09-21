@@ -1939,6 +1939,11 @@ async function listUserCollections(opts, funcs) {
  * Page size is server-fixed (10 entries); past-end returns an empty array.
  * Each record: { _id: "{userId}_{storyId}", achievements: {id: {t, d, i}},
  * ct: {id: ms}, node: { _id, t, ut, u, i } } — node is a minimal story stub.
+ * A page that still fails after retries is skipped and reported in
+ * `page_errors` (poisoned records 5xx the same page forever); but a failure
+ * before any page succeeds throws (private users 500 every page), and
+ * consecutive failures stop the walk — past-end answers 200 [], so a 5xx
+ * page is real breakage, not EOF.
  */
 async function listUserAchievements(opts, funcs) {
     let resolved = await resolve_user_id(opts, funcs);
@@ -1946,13 +1951,48 @@ async function listUserAchievements(opts, funcs) {
     let delay = opts.download_delay || 0;
     let all = [];
     let page = 1;
+    let pages_fetched = 0;
+    let page_errors = [];
+    let consecutive_failures = 0;
     while (true) {
-        let data = await get_json_endpoint(
-            `${API_BASE}/api/profile/achievements/`
-                + `${encodeURIComponent(user_id)}/${page}`,
-            'Listing user achievements',
-            funcs
-        );
+        let url = `${API_BASE}/api/profile/achievements/`
+            + `${encodeURIComponent(user_id)}/${page}`;
+        let data = null;
+        let ok = false;
+        let last_error = null;
+        for (let attempt = 1; attempt <= 3 && !ok; attempt += 1) {
+            try {
+                data = await get_json_endpoint(
+                    url,
+                    'Listing user achievements',
+                    funcs
+                );
+                ok = true;
+            }
+            catch (e) {
+                last_error = e && e.message ? e.message : String(e);
+                if (attempt < 3) {
+                    await funcs.wait(delay * 4);
+                }
+            }
+        }
+        if (!ok) {
+            if (pages_fetched === 0) {
+                throw new Error(
+                    'list-user-achievements failed for user '
+                        + user_id + ' (page ' + page + ': ' + last_error + ')'
+                );
+            }
+            page_errors.push({ page: page, error: last_error });
+            consecutive_failures += 1;
+            if (consecutive_failures >= 3) {
+                break;
+            }
+            page += 1;
+            continue;
+        }
+        consecutive_failures = 0;
+        pages_fetched += 1;
         let entries = Array.isArray(data) ? data : [];
         if (entries.length === 0) {
             break;
@@ -1965,10 +2005,11 @@ async function listUserAchievements(opts, funcs) {
     }
     return Object.assign(user_envelope_fields(resolved), {
         scraped_at: new Date().toISOString(),
-        page_count: page - 1,
+        page_count: pages_fetched,
         entry_count: all.length,
         entries: all,
-        data: all
+        data: all,
+        page_errors: page_errors
     });
 }
 

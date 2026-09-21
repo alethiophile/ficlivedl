@@ -616,12 +616,16 @@ function build_parser() {
                         download_delay: argv.delay
                     }, funcs)
                 );
-                await write_json_result(
-                    argv,
-                    result,
-                    result.entry_count + ' entries / '
-                        + result.page_count + ' pages'
-                );
+                let summary = result.entry_count + ' entries / '
+                    + result.page_count + ' pages';
+                if (result.page_errors && result.page_errors.length) {
+                    summary += ' (skipped: '
+                        + result.page_errors
+                            .map((pe) => 'page ' + pe.page)
+                            .join(', ')
+                        + ')';
+                }
+                await write_json_result(argv, result, summary);
             }
         )
         .command(
